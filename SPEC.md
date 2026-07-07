@@ -166,6 +166,26 @@ Nodemailer can open an SMTP connection.
 
 ---
 
+## 8b. Deployment — Docker (production only)
+
+The app ships as a **production-only** Docker image ([Dockerfile](Dockerfile)):
+
+- Multi-stage build (`deps` → `builder` → `runner`) on `node:20-alpine`, runs as
+  a non-root user, final stage is `NODE_ENV=production` running `node server.js`.
+- Uses Next.js **standalone** output — this requires `output: 'standalone'` in
+  `next.config.js` once the app is scaffolded, otherwise `server.js` won't exist.
+- The mail route runs on the **Node runtime** (SMTP sockets), which a plain Node
+  container satisfies — do not switch it to Edge.
+- Secrets (`SMTP_USER`, `SMTP_PASS`, `AUTH_SECRET`, `MONGO_URI`) are injected at
+  **runtime** via env / orchestrator secrets — never baked into the image
+  (enforced by [.dockerignore](.dockerignore), which excludes `.env*`).
+- No dev-mode / hot-reload container — production build only, by design.
+
+> Not yet buildable: the repo currently holds only the spec. The Dockerfile is
+> ready for the moment the Next.js project (with `package.json`) is added.
+
+---
+
 ## 9. Note on the archived `new_different_doc.md`
 
 That draft proposed each app sending through **its own** connected mail account

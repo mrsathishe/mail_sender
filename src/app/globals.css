@@ -1,0 +1,197 @@
+:root {
+  /* Theme palette */
+  --red: #be1a1a;
+  --red-bright: #d0311e;
+  --gold: #f7d87f;
+  --cream: #f8ebab;
+  --black: #1a1a1a;
+  --white: #ffffff;
+
+  /* Roles */
+  --bg: var(--cream);
+  --card: var(--white);
+  --border: #e4d9a8;
+  --text: var(--black);
+  --muted: #6b6b6b;
+  --accent: var(--red);
+  --accent-hover: var(--red-bright);
+  --danger: var(--red);
+  --ok: #7a5b00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Lato", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.center {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--red);
+  border-radius: 12px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 6px 24px rgba(26, 26, 26, 0.1);
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 1.25rem;
+  color: var(--red);
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+input:focus {
+  outline: none;
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(190, 26, 26, 0.15);
+}
+
+button {
+  width: 100%;
+  padding: 0.65rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--white);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+button:hover {
+  background: var(--accent-hover);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.msg {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+.msg.error {
+  background: rgba(208, 49, 30, 0.12);
+  color: var(--danger);
+  border: 1px solid rgba(208, 49, 30, 0.3);
+}
+.msg.ok {
+  background: var(--gold);
+  color: var(--ok);
+  border: 1px solid #e4c95a;
+}
+
+/* Dashboard */
+.wrap {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--red);
+}
+.topbar h1 {
+  color: var(--black);
+}
+.topbar button {
+  width: auto;
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+.topbar button:hover {
+  background: var(--red);
+  color: var(--white);
+}
+.app-item {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+.app-item h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  color: var(--black);
+}
+.app-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.secret {
+  background: var(--gold);
+  border: 1px dashed var(--red-bright);
+  border-radius: 8px;
+  padding: 0.75rem;
+  color: var(--black);
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  margin: 0.5rem 0 1rem;
+}
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}

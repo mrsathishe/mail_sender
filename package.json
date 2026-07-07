@@ -1,0 +1,29 @@
+{
+  "name": "mail_sender",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "eslint-config-next": "^15.5.20",
+    "jose": "^5.9.6",
+    "mongoose": "^8.9.5",
+    "next": "^15.5.20",
+    "nodemailer": "^6.10.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/nodemailer": "^6.4.17",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}
