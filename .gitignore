@@ -13,3 +13,6 @@ coverage
 # OS / editor noise
 .DS_Store
 *.log
+
+# Kubernetes real secret (use secret.example.yaml as a template)
+k8s/secret.yaml
