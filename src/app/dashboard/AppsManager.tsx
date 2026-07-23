@@ -14,6 +14,7 @@ export function AppsManager() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [newSecret, setNewSecret] = useState<{ name: string; key: string } | null>(null);
 
   async function load() {
@@ -28,6 +29,26 @@ export function AppsManager() {
   useEffect(() => {
     load();
   }, []);
+
+  async function onRegenerate(app: App) {
+    const ok = window.confirm(
+      `Generate a new secret key for “${app.websiteName}”?\n\n` +
+        "The current key will stop working immediately — you'll need to update " +
+        "it wherever your website uses it."
+    );
+    if (!ok) return;
+
+    setError("");
+    setRegeneratingId(app.id);
+    const res = await fetch(`/api/apps/${app.id}/regenerate-key`, { method: "POST" });
+    setRegeneratingId(null);
+    if (res.ok) {
+      const data = await res.json();
+      setNewSecret({ name: data.websiteName, key: data.secretKey });
+    } else {
+      setError("Could not regenerate the key. Please try again.");
+    }
+  }
 
   async function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,8 +111,20 @@ export function AppsManager() {
         ) : (
           apps.map((a) => (
             <div className="app-item" key={a.id}>
-              <h3>{a.websiteName}</h3>
-              <p>→ {a.destinationGmail}</p>
+              <div className="app-item-head">
+                <div>
+                  <h3>{a.websiteName}</h3>
+                  <p>→ {a.destinationGmail}</p>
+                </div>
+                <button
+                  type="button"
+                  className="regen-btn"
+                  onClick={() => onRegenerate(a)}
+                  disabled={regeneratingId === a.id}
+                >
+                  {regeneratingId === a.id ? "Generating…" : "Regenerate key"}
+                </button>
+              </div>
             </div>
           ))
         )}

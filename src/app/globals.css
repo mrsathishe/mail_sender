@@ -180,6 +180,25 @@ button:disabled {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.app-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.app-item .regen-btn {
+  width: auto;
+  flex-shrink: 0;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+.app-item .regen-btn:hover:not(:disabled) {
+  background: var(--red);
+  color: var(--white);
+}
 .secret {
   background: var(--gold);
   border: 1px dashed var(--red-bright);
