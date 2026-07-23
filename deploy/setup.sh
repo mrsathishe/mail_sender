@@ -37,8 +37,8 @@ WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
-Environment=PORT=3000
-ExecStart=$NODE_BIN $APP_DIR/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Environment=PORT=3100
+ExecStart=$NODE_BIN $APP_DIR/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3100
 Restart=on-failure
 RestartSec=3
 
@@ -49,5 +49,5 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now mail-sender
 
-echo "==> Done. App running on 127.0.0.1:3000"
+echo "==> Done. App running on 127.0.0.1:3100"
 echo "    Check with:  sudo systemctl status mail-sender"

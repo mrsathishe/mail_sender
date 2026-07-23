@@ -145,7 +145,7 @@ single-use, time-limited reset link is emailed via the same Gmail mailer.
 ### VPS (nginx + systemd)
 
 Runs the app in place from the repo clone — no Docker. nginx reverse-proxies all
-traffic to the Next.js server, which systemd keeps alive on `127.0.0.1:3000`.
+traffic to the Next.js server, which systemd keeps alive on `127.0.0.1:3100`.
 Scripts live in [deploy/](deploy/).
 
 ```bash

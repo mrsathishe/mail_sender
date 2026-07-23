@@ -17,8 +17,8 @@ WorkingDirectory=/home/YOUR_USER/mail_sender
 EnvironmentFile=/home/YOUR_USER/mail_sender/.env
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
-Environment=PORT=3000
-ExecStart=/usr/bin/node /home/YOUR_USER/mail_sender/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Environment=PORT=3100
+ExecStart=/usr/bin/node /home/YOUR_USER/mail_sender/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3100
 Restart=on-failure
 RestartSec=3
 
