@@ -18,6 +18,7 @@ export default async function DashboardPage() {
           <span className="muted">{session.email}</span>
         </div>
         <div className="topbar-actions">
+          <Link href="/docs">API docs</Link>
           {session.role === "admin" && <Link href="/admin">Admin</Link>}
           <LogoutButton />
         </div>
