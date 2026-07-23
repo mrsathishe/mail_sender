@@ -28,6 +28,6 @@ export async function POST(req: Request) {
     passwordHash: await hashPassword(password),
   });
 
-  await createSession({ userId: user._id.toString(), email: user.email });
+  await createSession({ userId: user._id.toString(), email: user.email, role: "user" });
   return NextResponse.json({ ok: true }, { status: 201 });
 }

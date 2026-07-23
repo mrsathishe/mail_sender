@@ -22,7 +22,14 @@ export async function POST(req: Request) {
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   }
+  if (user.disabled) {
+    return NextResponse.json({ error: "account_disabled" }, { status: 403 });
+  }
 
-  await createSession({ userId: user._id.toString(), email: user.email });
+  await createSession({
+    userId: user._id.toString(),
+    email: user.email,
+    role: user.role === "admin" ? "admin" : "user",
+  });
   return NextResponse.json({ ok: true });
 }

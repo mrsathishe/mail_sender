@@ -195,3 +195,140 @@ button:disabled {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* Dashboard topbar actions */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.topbar-actions a {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* Admin */
+.admin-nav {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  border-radius: 10px;
+  padding: 1.25rem;
+  font-weight: 400;
+}
+.stat-card:hover {
+  text-decoration: none;
+  border-left-color: var(--red);
+}
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--red);
+}
+.stat-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.admin-table th {
+  background: var(--cream);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+.admin-table tr.row-disabled {
+  opacity: 0.55;
+}
+.admin-table td.actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.admin-table td.actions button {
+  width: auto;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+.admin-table td.actions button:hover:not(:disabled) {
+  background: var(--red);
+  color: var(--white);
+}
+.admin-table td.actions button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.admin-table td.actions button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--white);
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  background: var(--gold);
+  color: var(--black);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.status-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+.status-fail {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.pager button {
+  width: auto;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+}
