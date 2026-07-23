@@ -1,0 +1,26 @@
+# Reference only — `npm run setup` (deploy/setup.sh) GENERATES this file
+# automatically with your real project path, user, and node binary, then
+# installs it. Shown here so you can see what gets created / edit it manually:
+#   sudo cp deploy/mail-sender.service /etc/systemd/system/   # after editing placeholders
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mail-sender
+
+[Unit]
+Description=Mail Sender (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+# Runs as your own user, from the clone in your home folder — no /opt needed.
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/mail_sender
+# Secrets (AUTH_SECRET, MONGO_URI, SMTP_*) are read from the repo's .env file.
+EnvironmentFile=/home/YOUR_USER/mail_sender/.env
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/node /home/YOUR_USER/mail_sender/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
