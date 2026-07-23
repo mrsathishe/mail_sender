@@ -142,6 +142,33 @@ single-use, time-limited reset link is emailed via the same Gmail mailer.
 
 ## Deployment
 
+### VPS (nginx + systemd)
+
+Runs the app in place from the repo clone — no Docker. nginx reverse-proxies all
+traffic to the Next.js server, which systemd keeps alive on `127.0.0.1:3000`.
+Scripts live in [deploy/](deploy/).
+
+```bash
+# On the VPS, in your home folder:
+git clone git@github.com:mrsathishe/mail_sender.git
+cd mail_sender
+
+# One-time: installs deps, builds, creates .env, installs+starts the systemd service.
+npm run setup
+nano .env                       # set AUTH_SECRET, MONGO_URI, SMTP_*
+sudo systemctl restart mail-sender
+
+# nginx site + HTTPS:
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/mail-sender
+sudo ln -s /etc/nginx/sites-available/mail-sender /etc/nginx/sites-enabled/mail-sender
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d mail.satz.co.in    # edit the domain in nginx.conf first
+```
+
+Later updates: `git pull && npm run deploy` (installs deps, rebuilds, restarts the
+service). Check status/logs with `sudo systemctl status mail-sender` and
+`journalctl -u mail-sender -f`.
+
 ### Docker (production-only image)
 
 ```bash
@@ -173,6 +200,7 @@ src/
   lib/                 auth, db, jwt, mailer, password, secret, env, flatten
   models/              User, App (Mongoose)
   middleware.ts        session gating
+deploy/                VPS deploy — nginx.conf, setup.sh, deploy.sh, systemd unit
 k8s/                   Kubernetes manifests
 Dockerfile             production image
 SPEC.md                source-of-truth spec (Step 1)
