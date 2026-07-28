@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 type AdminApp = {
   id: string;
   websiteName: string;
-  destinationGmail: string;
+  destinationEmail: string;
+  templateName: string;
   ownerEmail: string;
   createdAt: string;
 };
@@ -49,6 +50,7 @@ export function AppsAdmin() {
           <tr>
             <th>Website</th>
             <th>Destination</th>
+            <th>Design</th>
             <th>Owner</th>
             <th>Actions</th>
           </tr>
@@ -57,7 +59,8 @@ export function AppsAdmin() {
           {apps.map((a) => (
             <tr key={a.id}>
               <td>{a.websiteName}</td>
-              <td>{a.destinationGmail}</td>
+              <td>{a.destinationEmail}</td>
+              <td>{a.templateName}</td>
               <td>{a.ownerEmail}</td>
               <td className="actions">
                 <button

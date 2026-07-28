@@ -11,7 +11,7 @@ const DEFAULT_BODY = `{
 type Result = { status: number; body: string; ok: boolean } | { error: string } | null;
 
 // Live tester: paste an app's secret key + a JSON payload and actually call
-// POST /api/v1/send. This sends a REAL email to that app's destination Gmail.
+// POST /api/v1/send. This sends a REAL email to that app's destination inbox.
 export function TrySend({ endpoint }: { endpoint: string }) {
   const [secret, setSecret] = useState("");
   const [body, setBody] = useState(DEFAULT_BODY);
@@ -83,7 +83,8 @@ export function TrySend({ endpoint }: { endpoint: string }) {
       </button>
 
       <p className="muted" style={{ marginTop: "0.75rem" }}>
-        This sends a real email to the destination Gmail configured for that app.
+        This sends a real email to the destination address configured for that app,
+        using its selected mail design.
       </p>
 
       {result && "error" in result && <div className="msg error">{result.error}</div>}

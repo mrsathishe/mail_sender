@@ -8,19 +8,20 @@
 
 ## 1. What it is
 
-A **middleware** service that lets a website send its form submissions to a Gmail
-inbox — without the website owning any mail infrastructure.
+A **middleware** service that lets a website send its form submissions to an email
+inbox — without the website owning any mail infrastructure. The destination may be
+with **any provider**: Gmail, Zoho, Outlook or a custom domain.
 
 - A user fills a form on a website (name, message, maybe a file).
 - They click **Send**.
 - The website's Send button calls our REST API (`POST`) with the form data (and
   optional file) and a **secret key**.
 - We receive the call, verify the secret, turn the received fields into a
-  readable message, and **send it as an email to the Gmail configured for that app**.
+  readable message, and **send it as an email to the address configured for that app**.
 
-The email is sent **from our middleware's own Gmail account** (SMTP). The
-"configured gmail" chosen during app registration is the **destination** — where
-the form submissions land.
+The email is sent **from our middleware's own Gmail account** (SMTP). The address
+chosen during app registration is the **destination** — where the form submissions
+land — and is not restricted to Gmail.
 
 ---
 
@@ -40,7 +41,7 @@ Mail Sender API endpoint
   2. read the secret from the request
   3. verify the secret  ─────────►  invalid → 401 reject
   4. build the message text from the received fields
-  5. send email via our Gmail (SMTP)  ──────►  configured destination Gmail
+  5. send email via our Gmail (SMTP)  ──────►  configured destination address
         │
         ▼
 202 accepted  (email sent)
@@ -74,20 +75,25 @@ After login, the user registers an "app" by providing:
 | Field | Meaning |
 |---|---|
 | **Website name** | Friendly label for this app (e.g. "Acme contact form"). |
-| **Gmail to send to** | The destination Gmail inbox where submissions are delivered. |
+| **Email to send to** | The destination inbox where submissions are delivered — any provider. |
+| **Mail design** | Which of the five built-in designs renders the email. Changeable later; see [MAIL_TEMPLATES_SPEC.md](MAIL_TEMPLATES_SPEC.md). |
 | **Secret key** | **Generated** by us at registration. Shown once. The website puts this in the `POST /v1/send` request to authenticate. |
 
 ### 3c. Send flow (the public API)
 - The website calls `POST /v1/send` with the secret key and the form fields.
 - We verify the secret against the registered app.
-- We build the email body and send it to that app's configured destination Gmail.
+- We render the email with the app's selected design and send it to that app's
+  configured destination address.
 
 ---
 
 ## 4. Message building (received data → email)
 
-Whatever fields arrive in the POST body are turned into simple `Key: value`
-lines, one per field, and joined into the email message.
+Whatever fields arrive in the POST body are turned into a **multipart email**:
+a formatted HTML part rendered with the app's **selected mail design** (one styled
+row per field, plus the website name and a received-at footer) and a plain-text
+alternative with `Key: value` lines, one per field. The designs are catalogued in
+[MAIL_TEMPLATES_SPEC.md](MAIL_TEMPLATES_SPEC.md).
 
 **Example** — request body:
 
@@ -95,7 +101,7 @@ lines, one per field, and joined into the email message.
 { "name": "Jane", "message": "Hello there", "phone": "12345" }
 ```
 
-**Becomes the email body:**
+**Becomes the plain-text part:**
 
 ```
 Name: Jane
@@ -103,9 +109,17 @@ Message: Hello there
 Phone: 12345
 ```
 
-Rule: each top-level field becomes one line `<FieldName>: <value>`. Non-string
-values are stringified. (This is the same plain-text idea used later for the
-subject line too.)
+and an HTML part rendering the same fields in the app's chosen design.
+
+Rules:
+
+- Each top-level field becomes one row / one line `<FieldName>: <value>`.
+- Field keys are titleized (`first_name` → `First name`).
+- Nested objects become an indented sub-list (inner table in HTML); arrays
+  become bullet lists; empty/null values render as `—`.
+- Newlines inside a value are preserved (`<br />` in HTML).
+- All values are HTML-escaped, so submitted markup can never inject into the
+  email. The subject line is stripped of CR/LF (header-injection guard).
 
 ---
 
@@ -123,7 +137,7 @@ Responses:
 
 | Status | Meaning |
 |---|---|
-| `202` | Accepted — email sent to the configured Gmail. |
+| `202` | Accepted — email sent to the configured address. |
 | `400` | Bad request (missing/invalid body). |
 | `401` | Secret key missing or invalid. |
 | `502` | Mail send failed. |
@@ -149,7 +163,7 @@ Nodemailer can open an SMTP connection.
 - `resetTokenHash` / `resetTokenExpiresAt` are set when a password reset is
   requested and cleared once the password is changed or the token expires.
 
-**apps** — `{ userId, websiteName, destinationGmail, secretKeyHash, createdAt }`
+**apps** — `{ userId, websiteName, destinationEmail, templateId, secretKeyHash, createdAt }`
 - The secret key is **hashed** in the DB; the full key is shown once at creation
   and never stored in plaintext.
 
@@ -161,8 +175,9 @@ Nodemailer can open an SMTP connection.
 - Secret key rotation.
 - Rate limiting / quotas.
 - Google/OAuth login.
-- HTML templates.
-- Multiple / per-app sender accounts — sender is always **our** Gmail.
+- User-editable / custom HTML templates — the five built-in designs are
+  selection-only (MAIL_TEMPLATES_SPEC.md).
+- Multiple / per-app sender accounts — sender is always **our** single account.
 
 ---
 
@@ -190,5 +205,5 @@ The app ships as a **production-only** Docker image ([Dockerfile](Dockerfile)):
 
 That draft proposed each app sending through **its own** connected mail account
 (Gmail OAuth / SMTP per app). This spec **does not** adopt that: the sender is a
-single Gmail we own, and the app's configured Gmail is only the **destination**.
+single account we own, and the app's configured address is only the **destination**.
 Kept in `old/` for reference.

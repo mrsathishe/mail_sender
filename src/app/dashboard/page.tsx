@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { TEMPLATE_LIST } from "@/lib/templates";
 import { AppsManager } from "./AppsManager";
 import { LogoutButton } from "./LogoutButton";
 
@@ -23,7 +24,9 @@ export default async function DashboardPage() {
           <LogoutButton />
         </div>
       </div>
-      <AppsManager />
+      {/* Catalog is passed from the server so the design markup never ships to
+          the browser — the picker only needs id/name/description. */}
+      <AppsManager designs={TEMPLATE_LIST} />
     </div>
   );
 }

@@ -1,17 +1,20 @@
 # Mail Sender
 
-A middleware service that lets any website deliver its form submissions to a
-Gmail inbox — without the website owning any mail infrastructure.
+A middleware service that lets any website deliver its form submissions to an
+email inbox — without the website owning any mail infrastructure. The destination
+can be any provider: Gmail, Zoho, Outlook or your own domain.
 
 A visitor fills out a form on your site and clicks **Send**. Your frontend
 `POST`s the form fields (plus a secret key) to this service. Mail Sender verifies
-the secret, turns the submitted fields into a readable message, and emails it —
-from **our** Gmail account — to the **destination Gmail** you configured when you
-registered the app.
+the secret, renders the submitted fields with the app's chosen **mail design**,
+and emails it — from **our** Gmail account — to the **destination address** you
+configured when you registered the app.
 
-> This is **Step 1 (Basic)**. See [SPEC.md](SPEC.md) for the full, authoritative
-> scope and what is deliberately left out (file handling details, key rotation,
-> rate limiting, OAuth login, HTML templates).
+> This is **Step 1 (Basic)**. See [docs/SPEC.md](docs/SPEC.md) for the full,
+> authoritative scope and what is deliberately left out (file handling details,
+> rate limiting, OAuth login). Selectable mail designs and provider-agnostic
+> destinations are specified in
+> [docs/MAIL_TEMPLATES_SPEC.md](docs/MAIL_TEMPLATES_SPEC.md).
 
 ## How it works
 
@@ -26,8 +29,8 @@ POST /v1/send            ← called by the website frontend
         ▼
 Mail Sender API
   1. read + verify the secret key   ──► invalid → 401
-  2. build message text from the fields
-  3. send email via our Gmail (SMTP) ──► configured destination Gmail
+  2. render the fields with the app's chosen mail design
+  3. send email via our Gmail (SMTP) ──► configured destination address
         │
         ▼
 202 Accepted
@@ -107,9 +110,11 @@ curl http://localhost:3000/api/health
 ## Using it
 
 1. **Register** an account (email + password) at `/register`, then **log in**.
-2. From the **dashboard**, register an app by providing a website name and the
-   **destination Gmail** (where submissions land). A **secret key** is generated
-   and shown **once** — copy it now, it is stored only as a hash.
+2. From the **dashboard**, register an app by providing a website name, the
+   **destination email** (where submissions land — any provider) and one of the
+   five **mail designs**. A **secret key** is generated and shown **once** — copy
+   it now, it is stored only as a hash. The design can be changed later from the
+   same screen; the destination and design are shown on each app row.
 3. Wire your website's form to call the API with that key:
 
 ```http
@@ -120,7 +125,8 @@ Content-Type: application/json
 { "name": "Jane", "message": "Hello there", "phone": "12345" }
 ```
 
-Each top-level field becomes one `Key: value` line in the email body:
+Each top-level field becomes one row of the HTML email, with a `Key: value`
+plain-text alternative:
 
 ```
 Name: Jane
@@ -132,7 +138,7 @@ Phone: 12345
 
 | Status | Meaning |
 |---|---|
-| `202` | Accepted — email sent to the configured Gmail. |
+| `202` | Accepted — email sent to the configured address. |
 | `400` | Bad request (missing/invalid body). |
 | `401` | Secret key missing or invalid. |
 | `502` | Mail send failed. |
@@ -169,6 +175,19 @@ Later updates: `git pull && npm run deploy` (installs deps, rebuilds, restarts t
 service). Check status/logs with `sudo systemctl status mail-sender` and
 `journalctl -u mail-sender -f`.
 
+#### One-off migration (mail designs release)
+
+The release that renamed `destinationGmail` → `destinationEmail` and added
+`templateId` needs a one-time data migration. Run it with the service stopped so
+the running build never reads half-migrated documents:
+
+```bash
+sudo systemctl stop mail-sender
+git pull && npm ci
+node scripts/migrate-app-fields.mjs      # idempotent — safe to re-run
+npm run deploy                            # rebuilds + restarts
+```
+
 ### Docker (production-only image)
 
 ```bash
@@ -192,16 +211,19 @@ src/
   app/
     api/
       auth/            register, login, logout, forgot/reset password
-      apps/            register + list apps
+      apps/            register + list apps, change an app's mail design
+      templates/       design previews for the dashboard picker
       v1/send/         the public send endpoint (Node runtime)
       health/          health check
     dashboard/         apps manager UI
     login/ register/ forgot-password/ reset-password/
-  lib/                 auth, db, jwt, mailer, password, secret, env, flatten
-  models/              User, App (Mongoose)
+  lib/                 auth, db, jwt, mailer, password, secret, env, flatten, templates
+  models/              User, App, SendLog (Mongoose)
   middleware.ts        session gating
 deploy/                VPS deploy — nginx.conf, setup.sh, deploy.sh, systemd unit
+scripts/               one-off data migrations
 k8s/                   Kubernetes manifests
 Dockerfile             production image
-SPEC.md                source-of-truth spec (Step 1)
+docs/SPEC.md           source-of-truth spec (Step 1)
+docs/MAIL_TEMPLATES_SPEC.md  mail designs + any-provider destinations
 ```

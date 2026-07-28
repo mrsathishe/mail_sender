@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       .sort({ createdAt: -1 })
       .skip(page * PAGE_SIZE)
       .limit(PAGE_SIZE)
-      .select("websiteName destinationGmail status error createdAt")
+      .select("websiteName destinationEmail status error createdAt")
       .lean(),
     SendLog.countDocuments(),
   ]);
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     logs: logs.map((l) => ({
       id: String(l._id),
       websiteName: l.websiteName,
-      destinationGmail: l.destinationGmail,
+      destinationEmail: l.destinationEmail,
       status: l.status,
       error: l.error ?? null,
       createdAt: l.createdAt,

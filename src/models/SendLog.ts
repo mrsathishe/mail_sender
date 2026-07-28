@@ -6,7 +6,7 @@ const SendLogSchema = new Schema(
     appId: { type: Schema.Types.ObjectId, ref: "App", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     websiteName: { type: String, required: true }, // snapshot at send time
-    destinationGmail: { type: String, required: true }, // snapshot at send time
+    destinationEmail: { type: String, required: true }, // snapshot at send time
     status: { type: String, enum: ["sent", "smtp_failed"], required: true },
     error: { type: String, default: null },
   },

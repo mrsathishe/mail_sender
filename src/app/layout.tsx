@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Mail Sender",
-  description: "Send website form submissions to a Gmail inbox.",
+  description: "Send website form submissions to any email inbox.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

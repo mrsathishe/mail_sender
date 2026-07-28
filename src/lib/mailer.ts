@@ -16,12 +16,15 @@ function getTransporter(): Transporter {
 export async function sendMail(opts: {
   to: string;
   subject: string;
+  // Plain-text alternative; always sent so text-only clients stay readable.
   text: string;
+  html?: string;
 }): Promise<void> {
   await getTransporter().sendMail({
     from: env.smtpFrom,
     to: opts.to,
     subject: opts.subject,
     text: opts.text,
+    html: opts.html,
   });
 }

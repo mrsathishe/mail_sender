@@ -5,6 +5,7 @@ import { User } from "@/models/User";
 import { SendLog } from "@/models/SendLog";
 import { hashSecret } from "@/lib/secret";
 import { buildEmailBody, sanitizeSubject } from "@/lib/flatten";
+import { renderEmailHtml } from "@/lib/templates";
 import { sendMail } from "@/lib/mailer";
 
 // Must run on the Node.js runtime — Nodemailer opens an SMTP socket, which the
@@ -61,13 +62,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "empty_or_invalid_body" }, { status: 400 });
   }
 
-  // 4. Build message
+  // 4. Build message — the app's chosen design, with a plain-text alternative.
   const subject = sanitizeSubject(`New submission from ${app.websiteName}`);
   const text = buildEmailBody(data);
+  const html = renderEmailHtml(app.templateId, data, { websiteName: app.websiteName });
 
-  // 5. Send to the configured destination Gmail, logging the outcome either way.
+  // 5. Send to the app's configured destination, logging the outcome either way.
   try {
-    await sendMail({ to: app.destinationGmail, subject, text });
+    await sendMail({ to: app.destinationEmail, subject, text, html });
   } catch {
     await logSend(app, "smtp_failed", "sendMail threw");
     return NextResponse.json({ error: "smtp_failed" }, { status: 502 });
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
 // Record the attempt for the admin activity view. Never let a logging failure
 // affect the caller's result.
 async function logSend(
-  app: { _id: unknown; userId: unknown; websiteName: string; destinationGmail: string },
+  app: { _id: unknown; userId: unknown; websiteName: string; destinationEmail: string },
   status: "sent" | "smtp_failed",
   error?: string
 ): Promise<void> {
@@ -89,7 +91,7 @@ async function logSend(
       appId: app._id,
       userId: app.userId,
       websiteName: app.websiteName,
-      destinationGmail: app.destinationGmail,
+      destinationEmail: app.destinationEmail,
       status,
       error: error ?? null,
     });

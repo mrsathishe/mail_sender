@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 type Log = {
   id: string;
   websiteName: string;
-  destinationGmail: string;
+  destinationEmail: string;
   status: "sent" | "smtp_failed";
   error: string | null;
   createdAt: string;
@@ -56,7 +56,7 @@ export function LogsViewer() {
             <tr key={l.id}>
               <td>{new Date(l.createdAt).toLocaleString()}</td>
               <td>{l.websiteName}</td>
-              <td>{l.destinationGmail}</td>
+              <td>{l.destinationEmail}</td>
               <td>
                 <span className={l.status === "sent" ? "status-ok" : "status-fail"}>
                   {l.status === "sent" ? "Sent" : "Failed"}

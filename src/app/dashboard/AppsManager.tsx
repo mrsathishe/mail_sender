@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DesignPicker, type Design } from "./DesignPicker";
 
 type App = {
   id: string;
   websiteName: string;
-  destinationGmail: string;
+  destinationEmail: string;
+  templateId: string;
   createdAt: string;
 };
 
-export function AppsManager() {
+export function AppsManager({ designs }: { designs: Design[] }) {
   const [apps, setApps] = useState<App[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [newSecret, setNewSecret] = useState<{ name: string; key: string } | null>(null);
+  const [newTemplateId, setNewTemplateId] = useState(designs[0].id);
+  // Which app has its "change design" panel open, and the pending selection.
+  const [editing, setEditing] = useState<{ id: string; templateId: string } | null>(null);
+  const [savingDesign, setSavingDesign] = useState(false);
 
   async function load() {
     const res = await fetch("/api/apps");
@@ -29,6 +35,10 @@ export function AppsManager() {
   useEffect(() => {
     load();
   }, []);
+
+  function designName(templateId: string) {
+    return designs.find((d) => d.id === templateId)?.name ?? templateId;
+  }
 
   async function onRegenerate(app: App) {
     const ok = window.confirm(
@@ -50,6 +60,24 @@ export function AppsManager() {
     }
   }
 
+  async function onSaveDesign() {
+    if (!editing) return;
+    setError("");
+    setSavingDesign(true);
+    const res = await fetch(`/api/apps/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: editing.templateId }),
+    });
+    setSavingDesign(false);
+    if (res.ok) {
+      setEditing(null);
+      load();
+    } else {
+      setError("Could not change the design. Please try again.");
+    }
+  }
+
   async function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
@@ -61,7 +89,8 @@ export function AppsManager() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         websiteName: data.get("websiteName"),
-        destinationGmail: data.get("destinationGmail"),
+        destinationEmail: data.get("destinationEmail"),
+        templateId: newTemplateId,
       }),
     });
     setCreating(false);
@@ -69,9 +98,10 @@ export function AppsManager() {
       const created = await res.json();
       setNewSecret({ name: created.websiteName, key: created.secretKey });
       form.reset();
+      setNewTemplateId(designs[0].id);
       load();
     } else {
-      setError("Could not create app. Check the name and a valid Gmail address.");
+      setError("Could not create app. Check the name and a valid email address.");
     }
   }
 
@@ -82,9 +112,21 @@ export function AppsManager() {
         {error && <div className="msg error">{error}</div>}
         <label htmlFor="websiteName">Website name</label>
         <input id="websiteName" name="websiteName" type="text" required placeholder="Acme contact form" />
-        <label htmlFor="destinationGmail">Gmail to send submissions to</label>
-        <input id="destinationGmail" name="destinationGmail" type="email" required placeholder="support@acme.com" />
-        <button type="submit" disabled={creating}>
+        <label htmlFor="destinationEmail">Email to send submissions to</label>
+        <input id="destinationEmail" name="destinationEmail" type="email" required placeholder="support@acme.com" />
+        <p className="muted" style={{ margin: "-0.5rem 0 1rem" }}>
+          Any inbox works — Gmail, Zoho, Outlook or your own domain.
+        </p>
+
+        <label>Mail design</label>
+        <DesignPicker
+          designs={designs}
+          value={newTemplateId}
+          onChange={setNewTemplateId}
+          idPrefix="new-design"
+        />
+
+        <button type="submit" disabled={creating} style={{ marginTop: "1rem" }}>
           {creating ? "Generating…" : "Register app & generate secret"}
         </button>
       </form>
@@ -114,17 +156,50 @@ export function AppsManager() {
               <div className="app-item-head">
                 <div>
                   <h3>{a.websiteName}</h3>
-                  <p>→ {a.destinationGmail}</p>
+                  <p>→ {a.destinationEmail}</p>
+                  <p>Design: {designName(a.templateId)}</p>
                 </div>
-                <button
-                  type="button"
-                  className="regen-btn"
-                  onClick={() => onRegenerate(a)}
-                  disabled={regeneratingId === a.id}
-                >
-                  {regeneratingId === a.id ? "Generating…" : "Regenerate key"}
-                </button>
+                <div className="app-item-actions">
+                  <button
+                    type="button"
+                    className="regen-btn"
+                    onClick={() =>
+                      setEditing(
+                        editing?.id === a.id ? null : { id: a.id, templateId: a.templateId }
+                      )
+                    }
+                  >
+                    {editing?.id === a.id ? "Cancel" : "Change design"}
+                  </button>
+                  <button
+                    type="button"
+                    className="regen-btn"
+                    onClick={() => onRegenerate(a)}
+                    disabled={regeneratingId === a.id}
+                  >
+                    {regeneratingId === a.id ? "Generating…" : "Regenerate key"}
+                  </button>
+                </div>
               </div>
+
+              {editing?.id === a.id && (
+                <div className="design-edit">
+                  <DesignPicker
+                    designs={designs}
+                    value={editing.templateId}
+                    onChange={(templateId) => setEditing({ id: a.id, templateId })}
+                    idPrefix={`design-${a.id}`}
+                  />
+                  <button
+                    type="button"
+                    className="regen-btn"
+                    disabled={savingDesign || editing.templateId === a.templateId}
+                    onClick={onSaveDesign}
+                  >
+                    {savingDesign ? "Saving…" : "Save design"}
+                  </button>
+                </div>
+              )}
             </div>
           ))
         )}

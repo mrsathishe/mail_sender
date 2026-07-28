@@ -78,10 +78,11 @@ export default async function DocsPage() {
       <div className="doc-section">
         <h2>Overview</h2>
         <p>
-          Send your website&rsquo;s form submissions to a Gmail inbox with a single
-          HTTP request. First register an app on the{" "}
-          <Link href="/dashboard">dashboard</Link> to get a <strong>secret key</strong>{" "}
-          and set the destination Gmail. Then call the endpoint below with that key.
+          Send your website&rsquo;s form submissions to any email inbox — Gmail, Zoho,
+          Outlook or your own domain — with a single HTTP request. First register an app
+          on the <Link href="/dashboard">dashboard</Link> to get a{" "}
+          <strong>secret key</strong>, set the destination address, and pick a mail
+          design. Then call the endpoint below with that key.
         </p>
         <div className="endpoint">
           <span className="method-badge">POST</span>
@@ -102,11 +103,17 @@ export default async function DocsPage() {
       <div className="doc-section">
         <h2>Request body</h2>
         <p>
-          Send a JSON object (or a form post). Every top-level field becomes one{" "}
-          <code>Key: value</code> line in the email body. For example{" "}
-          <code>{`{ "name": "Jane", "message": "Hi" }`}</code> arrives as:
+          Send a JSON object (or a form post). Every top-level field becomes one row in
+          a formatted HTML email (with a <code>Key: value</code> plain-text fallback).
+          Nested objects and arrays are rendered as sub-lists, and values are escaped —
+          so <code>{`{ "name": "Jane", "message": "Hi" }`}</code> arrives as:
         </p>
         <CodeBlock code={`Name: Jane\nMessage: Hi`} />
+        <p style={{ marginTop: "1rem" }}>
+          The email is rendered with the <strong>mail design</strong> selected for that
+          app. Pick one when you register the app, or change it any time from the{" "}
+          <Link href="/dashboard">dashboard</Link>.
+        </p>
       </div>
 
       <div className="doc-section">
@@ -121,7 +128,7 @@ export default async function DocsPage() {
           <tbody>
             <tr>
               <td><code>202</code></td>
-              <td>Accepted — the email was sent to the configured Gmail.</td>
+              <td>Accepted — the email was sent to the configured address.</td>
             </tr>
             <tr>
               <td><code>400</code></td>
@@ -153,7 +160,7 @@ export default async function DocsPage() {
         <h2>Try it</h2>
         <p>
           Paste one of your app&rsquo;s secret keys and a JSON payload, then send a
-          real test email to that app&rsquo;s destination Gmail.
+          real test email to that app&rsquo;s destination address.
         </p>
         <TrySend endpoint={endpoint} />
       </div>

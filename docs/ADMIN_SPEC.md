@@ -30,7 +30,7 @@ Records every `/v1/send` attempt against a known app:
 | `appId` | ObjectId ref `App` | which app |
 | `userId` | ObjectId ref `User` | app owner |
 | `websiteName` | String | snapshot at send time |
-| `destinationGmail` | String | snapshot at send time |
+| `destinationEmail` | String | snapshot at send time |
 | `status` | String enum `"sent" \| "smtp_failed"` | outcome |
 | `error` | String (optional) | failure detail |
 | `createdAt` / `updatedAt` | Date | `{ timestamps: true }` |

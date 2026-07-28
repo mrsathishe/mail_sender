@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import { App } from "@/models/App";
 import { User } from "@/models/User";
 import { requireAdmin } from "@/lib/auth";
+import { templateName } from "@/lib/templates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export async function GET() {
   await connectDB();
   const apps = await App.find()
     .sort({ createdAt: -1 })
-    .select("websiteName destinationGmail userId createdAt")
+    .select("websiteName destinationEmail templateId userId createdAt")
     .lean();
 
   const owners = await User.find({ _id: { $in: apps.map((a) => a.userId) } })
@@ -27,7 +28,8 @@ export async function GET() {
     apps: apps.map((a) => ({
       id: String(a._id),
       websiteName: a.websiteName,
-      destinationGmail: a.destinationGmail,
+      destinationEmail: a.destinationEmail,
+      templateName: templateName(a.templateId),
       ownerEmail: emailByUser.get(String(a.userId)) ?? "(deleted user)",
       createdAt: a.createdAt,
     })),
