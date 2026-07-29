@@ -13,6 +13,7 @@
     "bcryptjs": "^2.4.3",
     "eslint-config-next": "^15.5.20",
     "jose": "^5.9.6",
+    "marked": "^18.0.7",
     "mongoose": "^8.9.5",
     "next": "^15.5.20",
     "nodemailer": "^6.10.0",

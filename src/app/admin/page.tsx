@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import { User } from "@/models/User";
 import { App } from "@/models/App";
 import { SendLog } from "@/models/SendLog";
+import { PageHeader } from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,16 @@ export default async function AdminOverviewPage() {
   ];
 
   return (
-    <div className="stat-grid">
-      {stats.map((s) => (
-        <Link className="stat-card" key={s.label} href={s.href}>
-          <span className="stat-value">{s.value}</span>
-          <span className="stat-label">{s.label}</span>
-        </Link>
-      ))}
-    </div>
+    <>
+      <PageHeader title="Admin overview" subtitle="Service totals across every account." />
+      <div className="stat-grid">
+        {stats.map((s) => (
+          <Link className="stat-card" key={s.label} href={s.href}>
+            <span className="stat-value">{s.value}</span>
+            <span className="stat-label">{s.label}</span>
+          </Link>
+        ))}
+      </div>
+    </>
   );
 }

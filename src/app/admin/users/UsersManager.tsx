@@ -87,7 +87,8 @@ type TableProps = {
 function Table({ users, currentEmail, busy, patch, remove }: TableProps) {
   if (users.length === 0) return <p className="muted">No users.</p>;
   return (
-    <table className="admin-table">
+    <div className="table-scroll">
+      <table className="admin-table">
       <thead>
         <tr>
           <th>Email</th>
@@ -133,6 +134,7 @@ function Table({ users, currentEmail, busy, patch, remove }: TableProps) {
           );
         })}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 }

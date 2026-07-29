@@ -30,6 +30,8 @@ export async function POST(req: Request) {
     userId: user._id.toString(),
     email: user.email,
     role: user.role === "admin" ? "admin" : "user",
+    emailVerified: Boolean(user.emailVerified),
   });
-  return NextResponse.json({ ok: true });
+  // An unverified account gets a session but middleware sends it to /verify-email.
+  return NextResponse.json({ ok: true, emailVerified: Boolean(user.emailVerified) });
 }

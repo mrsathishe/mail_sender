@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { isTemplateId, renderEmailHtml, PREVIEW_DATA } from "@/lib/templates";
+import { isTemplateId, renderPreviewHtml } from "@/lib/templates";
 
 export const runtime = "nodejs";
 
@@ -16,11 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "unknown_template" }, { status: 404 });
   }
 
-  const html = renderEmailHtml(id, PREVIEW_DATA, {
-    websiteName: "Your website",
-    // Fixed date so the preview is deterministic (and cacheable by the browser).
-    receivedAt: new Date(Date.UTC(2026, 0, 15, 9, 30)),
-  });
+  const html = renderPreviewHtml(id);
 
   return new NextResponse(html, {
     headers: {

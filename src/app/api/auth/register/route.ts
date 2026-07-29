@@ -4,6 +4,10 @@ import { connectDB } from "@/lib/db";
 import { User } from "@/models/User";
 import { hashPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
+import { issueAccountOtp } from "@/lib/verification-mail";
+
+// Nodemailer needs a socket for the verification code.
+export const runtime = "nodejs";
 
 const schema = z.object({
   email: z.string().email(),
@@ -28,6 +32,19 @@ export async function POST(req: Request) {
     passwordHash: await hashPassword(password),
   });
 
-  await createSession({ userId: user._id.toString(), email: user.email, role: "user" });
-  return NextResponse.json({ ok: true }, { status: 201 });
+  // Email the OTP the account needs to become usable. A session is still issued,
+  // but with emailVerified false it reaches only /verify-email.
+  const otp = await issueAccountOtp(user.email);
+  user.emailOtpHash = otp.codeHash;
+  user.emailOtpExpiresAt = otp.expiresAt;
+  user.emailOtpAttempts = 0;
+  await user.save();
+
+  await createSession({
+    userId: user._id.toString(),
+    email: user.email,
+    role: "user",
+    emailVerified: false,
+  });
+  return NextResponse.json({ ok: true, codeSent: otp.sent }, { status: 201 });
 }

@@ -6,6 +6,7 @@ type AdminApp = {
   id: string;
   websiteName: string;
   destinationEmail: string;
+  destinationVerified: boolean;
   templateName: string;
   ownerEmail: string;
   createdAt: string;
@@ -44,12 +45,14 @@ export function AppsAdmin() {
 
   return (
     <>
-      {error && <div className="msg error">{error}</div>}
-      <table className="admin-table">
+      {error && <div className="msg error" role="alert">{error}</div>}
+      <div className="table-scroll">
+        <table className="admin-table">
         <thead>
           <tr>
             <th>Website</th>
             <th>Destination</th>
+            <th>Confirmed</th>
             <th>Design</th>
             <th>Owner</th>
             <th>Actions</th>
@@ -60,6 +63,13 @@ export function AppsAdmin() {
             <tr key={a.id}>
               <td>{a.websiteName}</td>
               <td>{a.destinationEmail}</td>
+              <td>
+                {a.destinationVerified ? (
+                  <span className="status-ok">Yes</span>
+                ) : (
+                  <span className="status-fail">No</span>
+                )}
+              </td>
               <td>{a.templateName}</td>
               <td>{a.ownerEmail}</td>
               <td className="actions">
@@ -75,7 +85,8 @@ export function AppsAdmin() {
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </>
   );
 }

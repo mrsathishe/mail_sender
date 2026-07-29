@@ -16,7 +16,7 @@ export async function GET() {
   await connectDB();
   const apps = await App.find()
     .sort({ createdAt: -1 })
-    .select("websiteName destinationEmail templateId userId createdAt")
+    .select("websiteName destinationEmail destinationVerified templateId userId createdAt")
     .lean();
 
   const owners = await User.find({ _id: { $in: apps.map((a) => a.userId) } })
@@ -29,6 +29,8 @@ export async function GET() {
       id: String(a._id),
       websiteName: a.websiteName,
       destinationEmail: a.destinationEmail,
+      // .lean() skips schema defaults, so apps predating the field read as false.
+      destinationVerified: Boolean(a.destinationVerified),
       templateName: templateName(a.templateId),
       ownerEmail: emailByUser.get(String(a.userId)) ?? "(deleted user)",
       createdAt: a.createdAt,

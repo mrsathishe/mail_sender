@@ -9,6 +9,9 @@ submissions plus a secret key to `/v1/send`, and the service emails them to the
 destination inbox configured for that app. Users register apps in a dashboard;
 admins manage users/apps/logs. Mail goes out through **one** SMTP account we own
 (Gmail today) — the per-app address is the **destination**, never the sender.
+The product is branded **Mailer by satz**; every user-visible name, tagline and
+contact address comes from [src/lib/brand.ts](src/lib/brand.ts), so the header,
+footer, mail footer, OTP subjects and OG card cannot drift.
 
 `docs/` is the source of truth for scope and behaviour, and is expected to be kept
 in sync with code changes:
@@ -16,6 +19,10 @@ in sync with code changes:
 - [docs/SPEC.md](docs/SPEC.md) — the core service (step 1)
 - [docs/ADMIN_SPEC.md](docs/ADMIN_SPEC.md) — admin area
 - [docs/MAIL_TEMPLATES_SPEC.md](docs/MAIL_TEMPLATES_SPEC.md) — the 5 mail designs + provider-agnostic destinations
+- [docs/HARDENING_ROADMAP.md](docs/HARDENING_ROADMAP.md) — **open work only**: the
+  remaining pre-launch gap (volume guard), the sending-model and key decisions, and
+  planned features. Shipped items are one-line entries in its §7; don't re-document
+  them there
 - [docs/VPS_PROJECT_PLAYBOOK.md](docs/VPS_PROJECT_PLAYBOOK.md) — nginx/systemd VPS pattern
 - `old/` holds superseded design docs — do not treat them as current
 
@@ -31,6 +38,10 @@ npm run setup          # VPS first run: deps, build, .env, install+start systemd
 npm run deploy         # VPS updates: npm ci, rebuild, systemctl restart mail-sender
 
 node scripts/migrate-app-fields.mjs   # one-off data migration (idempotent)
+node scripts/migrate-destination-verification.mjs   # one-off; grandfathers users, gates unproven destinations
+node scripts/migrate-sendlog-indexes.mjs            # one-off; builds SendLog TTL + compound index, drops the old one
+node scripts/reset-db.mjs --db <name> --yes          # DESTRUCTIVE; drops the 5 collections, needs both flags
+node scripts/check-smtp.mjs [to@x.com]              # prove SMTP settings (connect, optionally send)
 ```
 
 There is **no test suite and no lint config** — `npx next lint` prompts to set
@@ -40,16 +51,29 @@ only runs `npm ci && npm run build`, and only on pushes to the `deploy` branch.
 
 To check mail rendering, sign in and open `/api/templates/<id>/preview` (or the
 picker on `/dashboard`) — it renders a design with fixed sample data. The
-`Try it` panel on `/docs` sends a real email using an app's secret key.
+`Try it` panel on `/docs` sends a real email using an app's secret key (it is
+rendered only for signed-in visitors; the rest of `/docs` is public).
 
 Required env vars are listed in [.env.example](.env.example): `APP_URL`,
-`AUTH_SECRET`, `MONGO_URI`, `SMTP_USER`, `SMTP_PASS`, optional `SMTP_FROM`.
-`SMTP_PASS` must be a Gmail App Password, not the account password.
+`AUTH_SECRET`, `MONGO_URI`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, plus optional
+`SMTP_PORT` / `SMTP_SECURE` / `SMTP_FROM` / `SEND_APP_DAILY_LIMIT` /
+`SPAM_SCORE_THRESHOLD`. Port defaults to 587 and `secure` is
+inferred from it (465 → implicit TLS) unless set explicitly; `SMTP_HOST` has no
+default on purpose, so a missing value fails loudly instead of relaying through
+someone else's server. The sending account is a **GoDaddy Professional Email (Pro
+Light) mailbox on the root domain** (`mail@satz.co.in`): submission host
+`smtpout.secureserver.net` on 465 or 587 (both verified) — *not* the MX host
+`smtp.secureserver.net`, which only receives, and not `mail.satz.co.in`, which
+resolves to the VPS running this app. The per-mailbox send cap is **not published**,
+so treat it as unknown but real (HARDENING_ROADMAP §0); the mailbox also cannot
+DKIM-sign, so DMARC alignment rests on SPF alone. Verify settings with
+`node scripts/check-smtp.mjs [to@example.com]` rather than by poking the send
+endpoint — it needs no DB and prints the provider's own error.
 
 ## Architecture
 
 **Auth is two-layered on purpose.** [src/middleware.ts](src/middleware.ts) does a
-cheap edge check of the JWT session cookie for `/dashboard`, `/docs`, `/admin`
+cheap edge check of the JWT session cookie for `/dashboard` and `/admin` only
 (and uses `x-forwarded-host`/`-proto` for redirects, because behind nginx
 `req.nextUrl` reports the internal `127.0.0.1:3100` bind address). Sessions live 7
 days, so a token's `role` claim is never trusted for privilege: every
@@ -64,27 +88,187 @@ bcrypt for passwords. Secret keys are shown once at creation/rotation and only
 their hash is stored.
 
 **The send pipeline** ([src/app/api/v1/send/route.ts](src/app/api/v1/send/route.ts)):
-bearer key → `hashSecret` lookup of the `App` → owner-disabled check → parse JSON
-or form body → `buildEmailBody()` (plain text) + `renderEmailHtml()` (HTML) →
-`sendMail()` → `SendLog` row on both success and failure (logging is wrapped so it
-can never affect the response). This route **must** stay
+bearer key → `hashSecret` lookup of the `App` → owner-disabled check →
+destination-verified check → `readLimitedBody()` (JSON or form) → **guard-field split
++ bot signals** (`splitGuardFields()` / `checkBotSignals()`) → **field-contract
+check** (`validateSubmission()` / `orderSubmission()`) → **content score**
+(`checkSubmissionContent()`) → **duplicate claim** → **daily-quota consume** →
+`buildEmailBody()`
+(plain text) + `renderEmailHtml()` (HTML) + `findReplyTo()` → `sendMail()` →
+`SendLog` row on both success and failure (logging is wrapped so it can never affect
+the response) → **autoresponse** (§4e, after the `202` is earned). `From:` is always
+our own address and the submitter goes in
+`Reply-To:` — the reverse is spoofing and fails DMARC. On failure the Nodemailer
+`code` / `responseCode` / `response` are captured into `SendLog.error`, because
+"sendMail threw" cannot be diagnosed. This route **must** stay
 `export const runtime = "nodejs"` — Nodemailer opens an SMTP socket, which Edge
 cannot do.
 
+**Spam defence is two libraries with opposite failure modes** (SPEC §4d).
+[bot-guard.ts](src/lib/bot-guard.ts) owns the per-app honeypot and minimum fill time:
+the honeypot's *name* is the owner's choice, because one platform-wide reserved name is
+one every bot author learns once; its fields are **stripped before** the field contract
+runs, so a honeypot is never declared and never reaches the email; and a negative
+elapsed time (client clock ahead of ours) **passes**, since a wrong clock isn't evidence
+of a bot. [spam-score.ts](src/lib/spam-score.ts) scores content against
+`SPAM_SCORE_THRESHOLD` (default 6) and is deliberately *structural*: link volume,
+anchor/BBCode markup and mail-header probes do the blocking, while phrase hits are
+capped **below** the threshold so vocabulary can only amplify — an SEO agency's own
+contact form legitimately receives "we need backlinks". Both refuse with `422` **before**
+the quota, so a blocked submission costs the owner nothing, and both write a
+`blocked_bot` / `blocked_spam` `SendLog` row with the reason, because a form that has
+gone quiet is otherwise unexplainable.
+
+**The autoresponder is the one mail we send to an unproven address** (SPEC §4e,
+[auto-responder.ts](src/lib/auto-responder.ts)). Four properties carry that: the
+recipient comes only from `findReplyTo()` on the submission (a caller can never name
+one), the text is the **owner's** so a leaked key picks the recipient but never the
+words, it consumes its **own** quota slot and is the half dropped when the day runs out,
+and it runs after the `202` so its failure can't change the caller's result. Blank
+subject/message mean "use the built-in wording" rather than storing a copy of it, so
+improving the wording reaches every app that never customised it. It renders through
+`renderAutoReplyHtml()`, which reads each design's extracted `palette` — one shared
+prose layout, not five more renderers.
+
+**Submissions are held to a per-app contract** ([src/lib/fields.ts](src/lib/fields.ts),
+SPEC §4b). Each `App` stores `fields: [{ name, required }]`, defaulted to
+name/email/phone/message so registering one stays a short form. `/v1/send` refuses an
+undeclared field with `400 unknown_field` and a missing required one with
+`400 missing_field`, echoing the field name — a valid key proves the request came from
+the app, not that the payload is the form its owner built, so without this a leaked key
+mails attacker-chosen content through our own sending domain. Names are matched
+case-insensitively but stored and rendered under the declared spelling, and
+`orderSubmission()` emits **every** declared field in declared order (an omitted
+optional one renders as `—`) so the destination inbox sees a stable layout instead of
+one that shifts with each request. The rules live only in `fields.ts` — the API routes
+and the dashboard's pre-flight check both defer to it.
+
+**Two counters guard the shared mailbox, and both are atomic on purpose** (SPEC §4c).
+[send-limit.ts](src/lib/send-limit.ts) enforces `SEND_APP_DAILY_LIMIT` (500/app/UTC
+day) by `$inc`-then-compare on a `{ appId, date }` row — check-then-increment lets two
+concurrent sends both read 499 and both pass — and **fails closed**, since not knowing
+today's count and guessing zero is how an allowance gets blown. [dedupe.ts](src/lib/dedupe.ts)
+suppresses an identical submission for 60s via an upsert that only matches an expired
+row, so a live claim collides on the unique index rather than passing; it **fails open**,
+because a duplicate email is waste but an unsent one is a lost enquiry. Order in the
+route matters: dedupe before quota (a double-click costs nothing), quota after body
+validation (a customer mid-integration shouldn't burn the day on 400s), and the dedupe
+claim is **released on send failure** so a retry after a `502` still delivers while the
+quota slot stays spent. The public docs read `env.appDailySendLimit`, so the documented
+number cannot drift from the enforced one. An autoresponse takes a **second** slot of
+its own (`consumeDailySend` again), so a submission with the reply enabled costs two.
+
+**The request body is bounded by one number.** [src/lib/body-limit.ts](src/lib/body-limit.ts)
+caps the *total* at `MAX_BODY_BYTES` (500KB) and nothing else — a per-field cap was
+rejected because N fields at the maximum multiply, so the total is the only real
+bound (HARDENING_ROADMAP §1.3). Bytes are counted as they arrive and the stream is
+cancelled on overflow; `content-length` is only an early hint, since a client can lie
+about it or omit it entirely. The body is read **after** auth, so an unauthenticated
+caller never makes us buffer. `MAX_DEPTH` is *not* a size limit: `JSON.parse` accepts
+input far deeper than `flatten.ts`'s recursion survives, so without it a 10KB body of
+5000 nested arrays returns a 500 instead of a `400`. Never swap
+`readLimitedBody()` back to `req.json()`/`req.formData()` — both buffer without a
+limit, which is also why the multipart branch re-wraps already-counted bytes.
+`deploy/nginx.conf` keeps `client_max_body_size` just above the app's cap; raise both
+together or neither takes effect.
+
+**Two things are verified by emailed OTP, with one helper.**
+[src/lib/otp.ts](src/lib/otp.ts) owns code generation and checking (8 chars from a
+32-symbol alphabet minus `I O 0 1`, sha256 at rest, 15-min expiry, 5-attempt cap —
+at ~40 bits the *attempt cap* is the control, which is why sha256 is still right);
+[src/lib/verification-mail.ts](src/lib/verification-mail.ts) owns the two mails.
+`checkOtp()` is pure and returns a reason code — the caller persists the outcome,
+because only it knows which document holds the state.
+
+1. **The account address** (SPEC §3a). Registration mails a code and issues a
+   session with `emailVerified: false`; [middleware.ts](src/middleware.ts) bounces
+   such a session to `/verify-email`. That claim is safe at the edge in one
+   direction only — it never goes true→false, and verifying re-mints the cookie —
+   but the one action that mails a caller-chosen address, `POST /api/apps`, still
+   re-reads the DB through `requireVerifiedUser()` in [auth.ts](src/lib/auth.ts).
+   `/verify-email` is deliberately outside the matcher (it's the redirect target),
+   and self-heals a stale claim via `POST /api/auth/refresh-session`, which is how
+   accounts grandfathered by the migration get past an old cookie.
+2. **An app's destination** (SPEC §3e, HARDENING_ROADMAP §1.1). If the destination
+   equals the owner's own verified address there is no second check — the server
+   compares against the DB email, so the dashboard checkbox is convenience only.
+   Otherwise a code goes to that address and the app is created **without a usable
+   key**: `secretKeyHash` holds the hash of a key that was generated and thrown
+   away, so `POST /api/apps/[id]/verify-destination` rotating the key is what makes
+   the app work at all. `/v1/send` returns `403 destination_unverified` meanwhile.
+
 **Mail rendering is split in two.** [src/lib/flatten.ts](src/lib/flatten.ts) owns
-data→email conversion and **all** HTML escaping (`toRows()`, `htmlValue()`);
+data→email conversion, **all** HTML escaping (`toRows()`, `htmlValue()`,
+`paragraphsHtml()`) and the header-safe helpers (`sanitizeSubject()`, `findReplyTo()`);
 [src/lib/templates.ts](src/lib/templates.ts) owns the 5 designs and nothing else.
 When adding or editing a design: build it from the pre-escaped rows (never
 re-escape or interpolate raw values), inline styles only, table-based, ≤600px, and
 let nested values inherit `color`/`font` so dark palettes stay readable. Note that
 a table-level `border-left` is dropped under `border-collapse:collapse` — use a
 real stripe cell (see the `accent` design). Designs are **selection-only**: an app
-stores a `templateId` and users pick/switch, never edit.
+stores a `templateId` and users pick/switch, never edit. Each design also carries a
+`palette`, which its own renderer reads for the page/text colours (so the two can't
+drift) and which `renderAutoReplyHtml()` uses to render the autoresponse — that mail is
+prose rather than rows, so it is one layout parameterised by palette, not a sixth design.
+
+**The public docs have one source, three renderings.** [src/lib/api-docs.ts](src/lib/api-docs.ts)
+holds the API documentation as typed *blocks* (`prose` / `code` / `endpoint` /
+`table`); [/docs](src/app/docs/page.tsx) renders each block with its own component
+(so `CodeBlock` keeps its copy button and tables keep `.doc-table`), while
+[/docs.md](src/app/docs.md/route.ts) and [/llms.txt](src/app/llms.txt/route.ts)
+emit the markdown equivalents for AI agents. Add or edit docs **only** in
+`api-docs.ts` — writing prose directly into the page reintroduces drift. The
+content is a TS module rather than a root `.md` file because `output: "standalone"`
+only copies files reachable through imports, so an fs-read markdown file would be
+absent in production. All three build their absolute URLs with
+[baseUrlFrom()](src/lib/base-url.ts), for the same forwarded-header reason as
+middleware.
 
 **Env access is lazy** ([src/lib/env.ts](src/lib/env.ts)): getters that throw only
 when a value is read at request time, so a missing var never breaks the build.
 Mongoose connections are cached on `global` ([src/lib/db.ts](src/lib/db.ts)) to
 survive dev hot-reloads; every route calls `connectDB()` itself.
+
+**One shell for every page, and `/` is a real landing page** (SPEC §5b).
+[layout.tsx](src/app/layout.tsx) renders `SiteHeader` → `<main id="main">` →
+`SiteFooter` plus a skip link, so the nav exists once instead of in each area's own
+`.topbar`; pages contribute only a [PageHeader](src/components/PageHeader.tsx). The
+header reads the session, which is what makes every route render dynamically — they
+effectively already did behind `next start`. `/` is a public marketing page (it
+redirects signed-in visitors to `/dashboard`) because with the dashboard behind a
+login wall there was nothing for a crawler to index; its JSON-LD must keep mirroring
+the visible copy. It shows a **real rendered sample email** via `renderPreviewHtml()`
+as an iframe `srcDoc` — the same function `/api/templates/[id]/preview` uses, because
+that route needs a session — and an **example dashboard row built from the real
+`.app-item` markup** rather than a screenshot, which would go stale silently. Customer
+logos go in `public/logos/` rather than hotlinked from the customer's own site, whose
+asset paths carry build hashes. Titles come from the `%s · Mailer by satz` template, and
+authed pages also set `robots: { index: false }` so the crawl policy doesn't rest on
+`robots.txt` alone.
+
+**Logo assets, and the one trap in them** ([public/](public/)). The logo is the
+designer's raster artwork and nothing else: `logo-mark.png` (512×313) is what the
+header loads, `logo-lockup.png` (1035×950, mark + wordmark) drives the landing hero
+via `next/image` — so the 441KB source is served as a sized AVIF/WebP — and the OG
+card. The earlier hand-drawn `logo.svg` / `logo-mark.svg` approximations were
+**deleted** for not matching the real mark; don't reintroduce a redrawn stand-in. The
+trap: in that artwork the envelope's fold lines are **transparent holes, not white
+paint**, so anything compositing it onto a dark background paints them dark and the
+envelope stops reading as an envelope. Every dark surface therefore puts it on a light
+plate — the header and hero under `prefers-color-scheme: dark`, the OG card,
+`icon-512.png`, `src/app/apple-icon.png`. It cannot be converted to real SVG (there is
+no vector information in a raster gradient to recover); a true vector needs the
+original design file.
+
+**Site CSS is one file with role tokens** ([globals.css](src/app/globals.css)).
+Components never reach for `--red` directly: `--accent` is tuned for text on the page
+background and `--btn-bg`/`--btn-text` for text on a fill, which is why dark mode can
+lift the brand red for links while keeping a darker fill under white text. Dark mode
+covers **site chrome only** — mail designs keep fixed palettes, since an email is
+rendered once and read in someone else's client. The design preview iframe is
+collapsed by default and sized from each design's `previewHeight`: it is served with
+`sandbox=""` and `default-src 'none'`, so nothing inside can report its own height,
+and one shared height clipped the taller designs.
 
 **Client/server split in the dashboard.** Server pages read the session and pass
 data down; e.g. [src/app/dashboard/page.tsx](src/app/dashboard/page.tsx) imports
@@ -98,16 +282,37 @@ emailed in plaintext through the same mailer, only its sha256 hash plus a 30-min
 expiry are stored on the user, and both fields are cleared on use. Forgot-password
 always returns the same response whether or not the email exists.
 
-## Data model (3 collections, [src/models/](src/models/))
+## Data model (5 collections, [src/models/](src/models/))
 
 - **User** — `email`, `passwordHash`, `role: "user" | "admin"`, `disabled`,
+  `emailVerified` + `emailOtp*` (registration OTP),
   `resetTokenHash`/`resetTokenExpiresAt`. Deleting a user cascades their apps and
   logs; `disabled` is the reversible alternative. The **first** admin must be
   promoted directly in the DB — after that the admin Users page can promote/demote.
 - **App** — `userId`, `websiteName`, `destinationEmail` (any provider),
-  `templateId` (design enum, default `card`), `secretKeyHash`.
+  `destinationVerified` + `destinationOtp*` (destination OTP), `templateId`
+  (design enum, default `card`), `fields` (`[{ name, required }]`, default
+  name/email/phone/message), `spamGuard` (`{ honeypotField, timingField,
+  minSubmitSeconds }`, all off), `autoResponder` (`{ enabled, subject, message }`,
+  off), `secretKeyHash`. The last two default to "off", which is why they need no
+  migration; they are edited per app **after** registration, so registering one stays
+  a short form.
 - **SendLog** — one row per `/v1/send` attempt, with `websiteName`/`destinationEmail`
-  snapshotted at send time and `status: "sent" | "smtp_failed"`.
+  snapshotted at send time, `kind: "submission" | "autoresponse"` and
+  `status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam"`; `error` holds the
+  reason for any non-`sent` row (the provider's SMTP reply, or which guard fired).
+  Rows expire after
+  `SEND_LOG_TTL_DAYS` (90) via a TTL index on `createdAt`, which is *ascending* so it
+  also serves the admin view's `sort({ createdAt: -1 })`; per-app history uses
+  `{ appId: 1, createdAt: -1 }` and is read by the owner's own Activity panel
+  (`GET /api/apps/[id]/logs`) as well as by admins. Index changes need
+  `scripts/migrate-sendlog-indexes.mjs` — `autoIndex` builds new indexes but never
+  drops superseded ones.
+- **DailyUsage** — `{ appId, date: "YYYY-MM-DD", count, expiresAt }`, unique on
+  `{ appId, date }`, TTL on `expiresAt`. The per-app send counter; the unique index is
+  what makes the upsert safe under concurrency, not an optimisation.
+- **SendDedupe** — `{ key, expiresAt }`, unique on `key`, TTL on `expiresAt`. The 60s
+  idempotency claim. Same point: uniqueness *is* the locking mechanism.
 
 ## Deployment
 

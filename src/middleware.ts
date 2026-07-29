@@ -16,13 +16,23 @@ function redirectTo(req: NextRequest, pathname: string) {
 }
 
 // Gate authed areas: no valid session cookie → redirect to /login.
+// An authenticated but unverified account is bounced to /verify-email until it
+// enters the OTP (SPEC §3a). This claim is safe to trust at the edge in only one
+// direction: it never goes true → false, and verifying re-mints the cookie, so a
+// stale token can only under-privilege. Actions that send mail re-read the DB via
+// requireVerifiedUser().
 // /admin/* additionally requires the admin role claim (a cheap edge check;
 // /api/admin/* routes re-verify against the DB).
+// /docs is deliberately NOT gated — it must stay readable by anyone (including
+// AI agents handed the URL), so the page itself hides the session-only parts.
 export async function middleware(req: NextRequest) {
   const token = req.cookies.get("session")?.value;
   const session = token ? await verifyToken(token) : null;
   if (!session) {
     return redirectTo(req, "/login");
+  }
+  if (!session.emailVerified) {
+    return redirectTo(req, "/verify-email");
   }
   if (req.nextUrl.pathname.startsWith("/admin") && session.role !== "admin") {
     return redirectTo(req, "/dashboard");
@@ -31,5 +41,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/docs/:path*", "/admin/:path*"],
+  matcher: ["/dashboard/:path*", "/admin/:path*"],
 };

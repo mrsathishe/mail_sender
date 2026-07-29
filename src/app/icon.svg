@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Mailer by satz">
+  <title>Mailer by satz</title>
+  <defs>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F9D976"/>
+      <stop offset="50%" stop-color="#D4AF37"/>
+      <stop offset="100%" stop-color="#B8860B"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark plate: the mark is gold-on-white, which vanishes against a light
+       browser tab strip. Speed lines are dropped — they turn to mush at 16px. -->
+  <rect width="64" height="64" rx="12" fill="#1a1a1a"/>
+
+  <g transform="translate(6,11.8) scale(0.14444) translate(-220,-150)">
+    <g transform="translate(285,250)">
+      <rect width="230" height="120" rx="6" fill="#C8102E"/>
+      <path d="M0 0 L115 70 L230 0" fill="none" stroke="#ffffff" stroke-width="10"/>
+      <path d="M0 120 L115 50 L230 120" fill="none" stroke="#ffffff" stroke-width="10"/>
+    </g>
+    <path
+      d="M220 150 L220 430 L285 430 L285 245 L400 345 L515 245 L515 430
+         L580 430 L580 150 L400 290 Z"
+      fill="url(#gold)"
+      stroke="#1a1a1a"
+      stroke-width="16"
+      stroke-linejoin="round"
+      paint-order="stroke fill"/>
+  </g>
+</svg>

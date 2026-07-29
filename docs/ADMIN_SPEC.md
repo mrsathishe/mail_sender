@@ -31,9 +31,14 @@ Records every `/v1/send` attempt against a known app:
 | `userId` | ObjectId ref `User` | app owner |
 | `websiteName` | String | snapshot at send time |
 | `destinationEmail` | String | snapshot at send time |
-| `status` | String enum `"sent" \| "smtp_failed"` | outcome |
-| `error` | String (optional) | failure detail |
+| `kind` | String enum `"submission" \| "autoresponse"` | which email — the submission, or the autoresponder's reply to the submitter (SPEC §4e). Defaulted, so older rows read as submissions |
+| `status` | String enum `"sent" \| "smtp_failed" \| "blocked_bot" \| "blocked_spam"` | outcome; the `blocked_*` pair never reached SMTP (SPEC §4d) |
+| `error` | String (optional) | why a non-`sent` row ended that way: the provider's SMTP reply, or which guard fired |
 | `createdAt` / `updatedAt` | Date | `{ timestamps: true }` |
+
+> The same rows are readable by the app's **owner** through
+> `GET /api/apps/[id]/logs` (SPEC §4f) — scoped to one app they own, with status
+> counts and today's usage. The admin view is the unscoped one.
 
 ---
 

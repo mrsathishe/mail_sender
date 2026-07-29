@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       .sort({ createdAt: -1 })
       .skip(page * PAGE_SIZE)
       .limit(PAGE_SIZE)
-      .select("websiteName destinationEmail status error createdAt")
+      .select("websiteName destinationEmail kind status error createdAt")
       .lean(),
     SendLog.countDocuments(),
   ]);
@@ -35,6 +35,8 @@ export async function GET(req: Request) {
       id: String(l._id),
       websiteName: l.websiteName,
       destinationEmail: l.destinationEmail,
+      // Rows written before `kind` existed have no value at all under `.lean()`.
+      kind: l.kind ?? "submission",
       status: l.status,
       error: l.error ?? null,
       createdAt: l.createdAt,

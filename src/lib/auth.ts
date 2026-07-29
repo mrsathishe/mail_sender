@@ -48,3 +48,32 @@ export async function requireAdmin(): Promise<
   }
   return { ok: true, session };
 }
+
+/**
+ * Gate for actions only a proven account may take — notably registering an app,
+ * which makes us send mail to an address the caller chose. Same reasoning as
+ * `requireAdmin`: the `emailVerified` JWT claim is an edge convenience, so the DB
+ * is re-read here. Returns the user's own (verified) email, which callers compare
+ * against a requested destination to decide whether an OTP is needed at all.
+ */
+export async function requireVerifiedUser(): Promise<
+  | { ok: true; session: SessionPayload; email: string }
+  | { ok: false; response: NextResponse }
+> {
+  const session = await getSession();
+  if (!session) {
+    return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
+  await connectDB();
+  const user = await User.findById(session.userId).select("email emailVerified disabled").lean();
+  if (!user || user.disabled) {
+    return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
+  if (!user.emailVerified) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "email_unverified" }, { status: 403 }),
+    };
+  }
+  return { ok: true, session, email: user.email };
+}

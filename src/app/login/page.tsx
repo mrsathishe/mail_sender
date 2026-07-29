@@ -24,7 +24,8 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res.ok) {
-      router.push("/dashboard");
+      const data = await res.json().catch(() => ({}));
+      router.push(data.emailVerified === false ? "/verify-email" : "/dashboard");
       router.refresh();
     } else {
       setError("Invalid email or password.");

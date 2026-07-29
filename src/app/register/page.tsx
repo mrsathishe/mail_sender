@@ -24,7 +24,11 @@ export default function RegisterPage() {
     });
     setLoading(false);
     if (res.ok) {
-      router.push("/dashboard");
+      const data = await res.json().catch(() => ({}));
+      // The account exists but is unverified — the OTP page is the only place it
+      // can go until the emailed code is entered. Pass on a failed send so that
+      // page offers a resend instead of claiming mail is on its way.
+      router.push(data.codeSent === false ? "/verify-email?sent=0" : "/verify-email");
       router.refresh();
       return;
     }

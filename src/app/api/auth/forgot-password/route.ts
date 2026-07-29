@@ -5,6 +5,7 @@ import { User } from "@/models/User";
 import { generateResetToken } from "@/lib/secret";
 import { sendMail } from "@/lib/mailer";
 import { env } from "@/lib/env";
+import { BRAND_FULL } from "@/lib/brand";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   try {
     await sendMail({
       to: user.email,
-      subject: "Reset your Mail Sender password",
+      subject: `Reset your ${BRAND_FULL} password`,
       text: `Reset your password using this link (valid 30 minutes):\n\n${link}\n\nIf you didn't request this, ignore this email.`,
     });
   } catch {

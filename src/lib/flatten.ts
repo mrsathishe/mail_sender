@@ -88,7 +88,53 @@ export function toRows(data: Record<string, unknown>): EmailRow[] {
   }));
 }
 
+/**
+ * Owner-authored prose (the autoresponder message, SPEC §4e) as escaped paragraphs:
+ * a blank line starts a new `<p>`, a single newline becomes a `<br />`. Lives here
+ * with the other escaping so no design ever interpolates raw text of its own.
+ */
+export function paragraphsHtml(text: string, style: string): string {
+  return text
+    .split(/\r?\n\s*\r?\n/)
+    .map((block) => block.trim())
+    .filter((block) => block !== "")
+    .map((block) => `<p style="${style}">${escapeHtml(block).replace(/\r?\n/g, "<br />")}</p>`)
+    .join("");
+}
+
 // Header-injection guard: strip CR/LF from anything used in the subject line.
 export function sanitizeSubject(subject: string): string {
   return subject.replace(/[\r\n]+/g, " ").trim().slice(0, 200);
+}
+
+// Deliberately strict: this value ends up in a mail header, so anything with
+// whitespace, CR/LF or a comma (which would start a second address) is rejected.
+const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]{2,}$/;
+// Checked in order, so an explicit "reply to" field wins over an incidental one.
+const REPLY_KEYS = ["replyto", "reply", "email", "emailaddress", "mail", "from", "contact"];
+
+/**
+ * Find the submitter's address in a submission so the destination inbox can just
+ * hit reply (HARDENING_ROADMAP §2.1). Only top-level string fields are considered:
+ * a nested value is too ambiguous to guess a header from. Returns undefined when
+ * nothing looks like a single valid address.
+ */
+export function findReplyTo(data: Record<string, unknown>): string | undefined {
+  const candidates = new Map<string, string>();
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!EMAIL_RE.test(trimmed)) continue;
+    const normalized = key.toLowerCase().replace(/[^a-z]/g, "");
+    if (!candidates.has(normalized)) candidates.set(normalized, trimmed);
+  }
+  if (candidates.size === 0) return undefined;
+
+  for (const key of REPLY_KEYS) {
+    const hit = candidates.get(key);
+    if (hit) return hit;
+  }
+  // A field named something unexpected ("your_address") still holds a valid
+  // address, and one is better than none.
+  return candidates.values().next().value;
 }

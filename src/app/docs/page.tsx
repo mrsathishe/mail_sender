@@ -1,168 +1,124 @@
 import { getSession } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { LogoutButton } from "../dashboard/LogoutButton";
+import { marked } from "marked";
+import { PageHeader } from "@/components/PageHeader";
 import { CodeBlock } from "./CodeBlock";
 import { TrySend } from "./TrySend";
+import { baseUrlFrom } from "@/lib/base-url";
+import { docSections, DOCS_TITLE, DOCS_TAGLINE, type DocBlock } from "@/lib/api-docs";
 
 export const dynamic = "force-dynamic";
 
-export default async function DocsPage() {
-  const session = await getSession();
-  if (!session) redirect("/login");
+// Public page: no session required, so an AI agent handed the bare URL can read
+// it. `alternates` advertises the markdown mirror to fetchers that land here.
+export const metadata = {
+  // `absolute` so the root layout's `%s · Mailer by satz` template doesn't repeat
+  // the brand that DOCS_TITLE already carries.
+  title: { absolute: DOCS_TITLE },
+  description: DOCS_TAGLINE,
+  alternates: { canonical: "/docs", types: { "text/markdown": "/docs.md" } },
+  openGraph: { title: DOCS_TITLE, description: DOCS_TAGLINE, url: "/docs" },
+};
 
-  // Build the public base URL from the forwarded headers nginx sets, so the
-  // examples show the real domain (e.g. https://mail.satz.co.in), not localhost.
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3100";
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const base = `${proto}://${host}`;
-  const endpoint = `${base}/api/v1/send`;
+// Safe to inject: every string comes from src/lib/api-docs.ts, never from a
+// request or the database.
+function Prose({ markdown }: { markdown: string }) {
+  return <div dangerouslySetInnerHTML={{ __html: marked.parse(markdown, { async: false }) }} />;
+}
 
-  const curlExample = `curl -X POST ${endpoint} \\
-  -H "Authorization: Bearer YOUR_SECRET_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"name":"Jane Doe","email":"jane@example.com","message":"Hello!"}'`;
-
-  const fetchExample = `await fetch("${endpoint}", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer YOUR_SECRET_KEY",
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    name: "Jane Doe",
-    email: "jane@example.com",
-    message: "Hello!",
-  }),
-});`;
-
-  const formExample = `<form id="contact">
-  <input name="name" placeholder="Your name" required />
-  <input name="email" type="email" placeholder="Your email" required />
-  <textarea name="message" placeholder="Message" required></textarea>
-  <button type="submit">Send</button>
-</form>
-
-<script>
-  document.getElementById("contact").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
-    const res = await fetch("${endpoint}", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer YOUR_SECRET_KEY",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-    alert(res.ok ? "Sent!" : "Failed to send");
-  });
-</script>`;
-
-  return (
-    <div className="wrap">
-      <div className="topbar">
-        <div>
-          <h1 style={{ margin: 0 }}>API documentation</h1>
-          <span className="muted">{session.email}</span>
-        </div>
-        <div className="topbar-actions">
-          <Link href="/dashboard">Dashboard</Link>
-          {session.role === "admin" && <Link href="/admin">Admin</Link>}
-          <LogoutButton />
-        </div>
-      </div>
-
-      <div className="doc-section">
-        <h2>Overview</h2>
-        <p>
-          Send your website&rsquo;s form submissions to any email inbox — Gmail, Zoho,
-          Outlook or your own domain — with a single HTTP request. First register an app
-          on the <Link href="/dashboard">dashboard</Link> to get a{" "}
-          <strong>secret key</strong>, set the destination address, and pick a mail
-          design. Then call the endpoint below with that key.
-        </p>
+function Block({ block }: { block: DocBlock }) {
+  switch (block.kind) {
+    case "prose":
+      return <Prose markdown={block.markdown} />;
+    case "endpoint":
+      return (
         <div className="endpoint">
-          <span className="method-badge">POST</span>
-          <span>{endpoint}</span>
+          <span className="method-badge">{block.method}</span>
+          <span>{block.url}</span>
         </div>
-      </div>
-
-      <div className="doc-section">
-        <h2>Authentication</h2>
-        <p>
-          Pass your secret key as a Bearer token in the <code>Authorization</code>{" "}
-          header. Keep it on your server — never expose it in public client-side code
-          you don&rsquo;t control. A missing or wrong key returns <code>401</code>.
-        </p>
-        <CodeBlock code={`Authorization: Bearer YOUR_SECRET_KEY`} />
-      </div>
-
-      <div className="doc-section">
-        <h2>Request body</h2>
-        <p>
-          Send a JSON object (or a form post). Every top-level field becomes one row in
-          a formatted HTML email (with a <code>Key: value</code> plain-text fallback).
-          Nested objects and arrays are rendered as sub-lists, and values are escaped —
-          so <code>{`{ "name": "Jane", "message": "Hi" }`}</code> arrives as:
-        </p>
-        <CodeBlock code={`Name: Jane\nMessage: Hi`} />
-        <p style={{ marginTop: "1rem" }}>
-          The email is rendered with the <strong>mail design</strong> selected for that
-          app. Pick one when you register the app, or change it any time from the{" "}
-          <Link href="/dashboard">dashboard</Link>.
-        </p>
-      </div>
-
-      <div className="doc-section">
-        <h2>Responses</h2>
+      );
+    case "code":
+      return (
+        <>
+          {block.label && (
+            <p>
+              <strong>{block.label}</strong>
+            </p>
+          )}
+          <CodeBlock code={block.code} />
+        </>
+      );
+    case "table":
+      return (
         <table className="doc-table">
           <thead>
             <tr>
-              <th>Status</th>
-              <th>Meaning</th>
+              {block.headers.map((h) => (
+                <th key={h}>{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><code>202</code></td>
-              <td>Accepted — the email was sent to the configured address.</td>
-            </tr>
-            <tr>
-              <td><code>400</code></td>
-              <td>Empty or invalid body.</td>
-            </tr>
-            <tr>
-              <td><code>401</code></td>
-              <td>Secret key missing or invalid.</td>
-            </tr>
-            <tr>
-              <td><code>502</code></td>
-              <td>The mail server failed to send.</td>
-            </tr>
+            {block.rows.map((row, r) => (
+              // Index key: the status-code column repeats (three different 400s).
+              <tr key={r}>
+                {row.map((cell, i) => (
+                  <td
+                    key={i}
+                    dangerouslySetInnerHTML={{ __html: marked.parseInline(cell, { async: false }) }}
+                  />
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
-      </div>
+      );
+  }
+}
 
-      <div className="doc-section">
-        <h2>Examples</h2>
-        <p><strong>cURL</strong></p>
-        <CodeBlock code={curlExample} />
-        <p style={{ marginTop: "1rem" }}><strong>JavaScript (fetch)</strong></p>
-        <CodeBlock code={fetchExample} />
-        <p style={{ marginTop: "1rem" }}><strong>HTML form</strong></p>
-        <CodeBlock code={formExample} />
-      </div>
+export default async function DocsPage() {
+  const session = await getSession();
+  const base = baseUrlFrom(await headers());
+
+  return (
+    <div className="wrap">
+      <PageHeader title="API documentation" subtitle={DOCS_TAGLINE} />
+
+      {docSections(base).map((section) => (
+        <div className="doc-section" key={section.id}>
+          <h2>{section.heading}</h2>
+          {section.blocks.map((block, i) => (
+            <Block key={i} block={block} />
+          ))}
+        </div>
+      ))}
 
       <div className="doc-section">
         <h2>Try it</h2>
+        {session ? (
+          <>
+            <p>
+              Paste one of your app&rsquo;s secret keys and a JSON payload, then send a
+              real test email to that app&rsquo;s destination address.
+            </p>
+            <TrySend endpoint={`${base}/api/v1/send`} />
+          </>
+        ) : (
+          <p>
+            <Link href="/login">Sign in</Link> to send a real test email from this page
+            using one of your app&rsquo;s secret keys.
+          </p>
+        )}
+      </div>
+
+      <div className="doc-section">
+        <h2>Machine-readable version</h2>
         <p>
-          Paste one of your app&rsquo;s secret keys and a JSON payload, then send a
-          real test email to that app&rsquo;s destination address.
+          This page is also available as plain markdown for AI agents and scripts:{" "}
+          <a href="/docs.md">/docs.md</a> (indexed from <a href="/llms.txt">/llms.txt</a>
+          ).
         </p>
-        <TrySend endpoint={endpoint} />
       </div>
     </div>
   );

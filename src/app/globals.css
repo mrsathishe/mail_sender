@@ -10,6 +10,7 @@
   /* Roles */
   --bg: var(--cream);
   --card: var(--white);
+  --surface-2: #fdf6cf;
   --border: #e4d9a8;
   --text: var(--black);
   --muted: #6b6b6b;
@@ -17,6 +18,38 @@
   --accent-hover: var(--red-bright);
   --danger: var(--red);
   --ok: #7a5b00;
+
+  /* Filled buttons carry their own pair: `--accent` is tuned for text on the page
+     background, which is the opposite contrast problem to white on a fill. */
+  --btn-bg: var(--red);
+  --btn-hover: var(--red-bright);
+  --btn-text: var(--white);
+
+  --shadow: 0 6px 24px rgba(26, 26, 26, 0.1);
+  color-scheme: light;
+}
+
+/* Dark mode covers the site chrome only. The mail designs keep their own fixed
+   palettes — an email is rendered once and read in someone else's client. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15120e;
+    --card: #211d17;
+    --surface-2: #2a251d;
+    --border: #3b342a;
+    --text: #f4eee3;
+    --muted: #a89e8e;
+    /* The brand red is too dark to read on a dark background; these are the same
+       hue lifted until they pass AA as text. */
+    --accent: #ff8072;
+    --accent-hover: #ffa79c;
+    --danger: #ff8072;
+    --ok: #e6c86d;
+    --btn-bg: #c9241f;
+    --btn-hover: #e03a2c;
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
 }
 
 * {
@@ -25,10 +58,18 @@
 
 body {
   margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   font-family: "Lato", ui-sans-serif, system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+main {
+  flex: 1 0 auto;
 }
 
 a {
@@ -41,31 +82,262 @@ a:hover {
   text-decoration: underline;
 }
 
+/* One visible focus treatment for every interactive element. Keyboard-only, so it
+   never appears on a mouse click. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Announced by screen readers, invisible on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  background: var(--card);
+  border: 2px solid var(--accent);
+  border-radius: 0 0 8px 0;
+  font-weight: 600;
+}
+.skip-link:focus {
+  left: 0;
+}
+
+/* ── Site header ─────────────────────────────────────────────────────────── */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--card);
+  border-bottom: 2px solid var(--accent);
+}
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0.65rem 1.5rem;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+}
+.brand:hover {
+  text-decoration: none;
+}
+.logo-mark {
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+/* Same reason as .hero-logo: the mark's envelope fold lines are transparent holes in
+   the artwork, and the header sits on --card, which is dark in this theme. */
+@media (prefers-color-scheme: dark) {
+  .logo-mark {
+    background: var(--white);
+    border-radius: 6px;
+    padding: 3px 5px;
+  }
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+.brand-name {
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.brand-suffix {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: lowercase;
+  color: var(--accent);
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  font-size: 0.95rem;
+}
+.site-nav a {
+  font-weight: 600;
+}
+.site-nav button {
+  width: auto;
+  padding: 0.4rem 0.85rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+.site-nav button:hover {
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-text);
+}
+.nav-cta {
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  color: var(--btn-text) !important;
+}
+.nav-cta:hover {
+  background: var(--btn-hover);
+  text-decoration: none;
+}
+.nav-toggle {
+  display: none;
+}
+.nav-toggle-bars,
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: currentColor;
+  content: "";
+}
+.nav-toggle-bars {
+  position: relative;
+}
+.nav-toggle-bars::before {
+  position: absolute;
+  top: -5px;
+}
+.nav-toggle-bars::after {
+  position: absolute;
+  top: 5px;
+}
+
+/* ── Site footer ─────────────────────────────────────────────────────────── */
+.site-footer {
+  margin-top: 3rem;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+.site-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 1.25rem 1.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.site-footer-inner p {
+  margin: 0;
+}
+.site-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* ── Page shells ─────────────────────────────────────────────────────────── */
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
 .center {
-  min-height: 100vh;
+  min-height: 60vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: 2.5rem 1.5rem;
 }
 
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-top: 4px solid var(--red);
+  border-top: 4px solid var(--accent);
   border-radius: 12px;
   padding: 2rem;
   width: 100%;
   max-width: 420px;
-  box-shadow: 0 6px 24px rgba(26, 26, 26, 0.1);
+  box-shadow: var(--shadow);
+}
+/* Dashboard cards are full-width panels, not centred auth forms. */
+.card-wide {
+  max-width: 100%;
 }
 
 h1 {
   font-size: 1.4rem;
   margin: 0 0 1.25rem;
-  color: var(--red);
+  color: var(--accent);
+}
+.card h2 {
+  margin: 0 0 1.25rem;
+  font-size: 1.1rem;
+  color: var(--accent);
 }
 
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--accent);
+}
+.page-header h1 {
+  margin: 0;
+  color: var(--text);
+}
+.page-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* ── Forms ───────────────────────────────────────────────────────────────── */
 label {
   display: block;
   font-size: 0.85rem;
@@ -73,20 +345,28 @@ label {
   margin-bottom: 0.35rem;
 }
 
-input {
+input,
+select,
+textarea {
   width: 100%;
   padding: 0.6rem 0.75rem;
   margin-bottom: 1rem;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--white);
+  background: var(--card);
   color: var(--text);
   font-size: 0.95rem;
+  font-family: inherit;
 }
-input:focus {
+input:focus,
+select:focus,
+textarea:focus {
   outline: none;
-  border-color: var(--red);
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(190, 26, 26, 0.15);
+}
+input[readonly] {
+  background: var(--surface-2);
 }
 
 button {
@@ -94,25 +374,57 @@ button {
   padding: 0.65rem;
   border: none;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--white);
+  background: var(--btn-bg);
+  color: var(--btn-text);
   font-size: 0.95rem;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 button:hover {
-  background: var(--accent-hover);
+  background: var(--btn-hover);
 }
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1.4rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+}
+.btn-primary {
+  background: var(--btn-bg);
+  color: var(--btn-text);
+}
+.btn-primary:hover {
+  background: var(--btn-hover);
+  color: var(--btn-text);
+  text-decoration: none;
+}
+.btn-secondary {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.btn-secondary:hover {
+  background: var(--accent);
+  color: var(--btn-text);
+  text-decoration: none;
+}
+
 .row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   font-size: 0.85rem;
   margin-top: 0.75rem;
 }
@@ -130,40 +442,303 @@ button:disabled {
 }
 .msg.ok {
   background: var(--gold);
-  color: var(--ok);
+  color: #6b4f00;
   border: 1px solid #e4c95a;
 }
 
-/* Dashboard */
-.wrap {
-  max-width: 840px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+/* One-time codes: fixed-width, spaced glyphs so a mistyped character is obvious */
+.otp-input {
+  font-family: ui-monospace, monospace;
+  font-size: 1.3rem;
+  letter-spacing: 0.35em;
+  text-align: center;
+  text-transform: uppercase;
 }
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid var(--red);
-}
-.topbar h1 {
-  color: var(--black);
-}
-.topbar button {
+/* A button that reads as a link — used for secondary actions inside a .row */
+.link-btn {
   width: auto;
-  padding: 0.45rem 0.9rem;
+  padding: 0;
   background: transparent;
-  border: 1px solid var(--red);
-  color: var(--red);
+  border: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 500;
 }
-.topbar button:hover {
-  background: var(--red);
-  color: var(--white);
+.link-btn:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+.row button:not(.link-btn) {
+  width: auto;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+/* ── Landing page ────────────────────────────────────────────────────────── */
+.landing {
+  max-width: 960px;
+}
+.hero {
+  text-align: center;
+  padding: 2.5rem 0 3rem;
+}
+.hero .logo-mark {
+  margin: 0 auto 1rem;
+}
+.hero-logo {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  margin: 0 auto 1rem;
+}
+/* The lockup's envelope fold lines are transparent holes in the artwork, not white
+   paint, so against the dark theme's background they paint dark and the envelope
+   stops reading as an envelope. A light plate is what keeps it intact — the same
+   reasoning as .used-by-logo and the generated icons. */
+@media (prefers-color-scheme: dark) {
+  .hero-logo {
+    background: var(--white);
+    border-radius: 18px;
+    padding: 0.75rem 1.1rem;
+  }
+}
+.hero h1 {
+  font-size: clamp(1.9rem, 5vw, 3rem);
+  line-height: 1.15;
+  margin: 0 0 1rem;
+  color: var(--text);
+}
+.hero-lede {
+  max-width: 42rem;
+  margin: 0 auto 1.75rem;
+  font-size: clamp(1rem, 2.2vw, 1.2rem);
+  color: var(--muted);
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+/* The price is the second question every visitor has; say it in the hero. */
+.hero-price {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Nine blocks stacked with margin alone read as one wall of text — a rule plus
+   generous padding is what makes the page skimmable by section. */
+.landing-section {
+  padding: 3rem 0;
+  border-top: 1px solid var(--border);
+}
+/* Eyebrow naming the block, with a short rule leading into it. */
+.landing-section > .section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.landing-section > .section-label::before {
+  content: "";
+  flex: 0 0 1.5rem;
+  height: 2px;
+  /* currentColor, not --gold: the pale brand gold all but vanishes on the cream
+     page background, and this way the rule follows the label into dark mode. */
+  background: currentColor;
+}
+.landing-section > h2 {
+  font-size: 1.5rem;
+  margin: 0 0 1.25rem;
+  color: var(--text);
+}
+.landing-section > p {
+  margin: 1rem 0 0;
+}
+
+.step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+.step-list li {
+  display: flex;
+  gap: 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+.step-number {
+  flex: 0 0 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  font-weight: 700;
+}
+.step-list h3,
+.feature-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+.step-list p,
+.feature-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+.feature-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+/* auto-fill, not auto-fit: with a single site listed, auto-fit stretches the one
+   card across the full width and it reads as a banner rather than one of a set. */
+.used-by-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+.used-by-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+.used-by-card a {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.used-by-logo {
+  /* Contained, not cropped: a customer's mark may be any aspect ratio, and the
+     white plate keeps a logo with a transparent or light background readable in
+     dark mode — mail-style fixed palettes, same reasoning. */
+  align-self: flex-start;
+  max-width: 100%;
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 0.15rem;
+  background: var(--white);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.used-by-card span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+/* Scoped to beat `.used-by-card span` above, which is the more specific selector. */
+.used-by-card .used-by-domain {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+
+/* Scoped to beat `.landing-section > p`, which is the more specific selector. */
+.landing-section > .sample-caption {
+  margin: -0.5rem 0 1.25rem;
+  color: var(--muted);
+}
+.sample-mail,
+.dash-preview {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sample-mail iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  /* Mail designs carry their own fixed palettes, so the frame never follows the
+     site's dark mode — give it the light backdrop a mail client would. */
+  background: var(--white);
+}
+.dash-preview {
+  background: var(--surface-2);
+  padding: 1rem;
+}
+.dash-preview .app-item {
+  margin-bottom: 0;
+}
+
+.limits-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+}
+.limits-list li {
+  margin-bottom: 0.6rem;
+}
+
+.faq-list {
+  margin: 0;
+}
+.faq-list dt {
+  font-weight: 700;
+  margin-top: 1.25rem;
+}
+.faq-list dt:first-child {
+  margin-top: 0;
+}
+.faq-list dd {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.landing-cta {
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 2rem 1.5rem;
+  /* The last .landing-section already contributes 3rem of bottom padding. */
+  margin: 1rem 0 1rem;
+}
+.landing-cta h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.4rem;
+}
+.landing-cta p {
+  margin: 0 auto 1.5rem;
+  max-width: 34rem;
+  color: var(--muted);
+}
+
+/* ── Dashboard ───────────────────────────────────────────────────────────── */
+.app-list {
+  margin-top: 2rem;
 }
 .app-item {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-left: 4px solid var(--gold);
   border-radius: 10px;
@@ -173,17 +748,29 @@ button:disabled {
 .app-item h3 {
   margin: 0 0 0.25rem;
   font-size: 1rem;
-  color: var(--black);
+  color: var(--text);
 }
 .app-item p {
   margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
 }
+.app-item code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  background: var(--surface-2);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+}
+.app-item abbr {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 700;
+}
 .app-item-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 1rem;
 }
 .app-item .regen-btn {
@@ -192,12 +779,13 @@ button:disabled {
   padding: 0.4rem 0.8rem;
   font-size: 0.8rem;
   background: transparent;
-  border: 1px solid var(--red);
-  color: var(--red);
+  border: 1px solid var(--accent);
+  color: var(--accent);
 }
 .app-item .regen-btn:hover:not(:disabled) {
-  background: var(--red);
-  color: var(--white);
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-text);
 }
 .app-item-actions {
   display: flex;
@@ -206,41 +794,135 @@ button:disabled {
   flex-shrink: 0;
 }
 
-/* Mail design picker */
-.design-picker {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-  gap: 0.75rem;
+.form-section {
+  margin: 1.75rem 0 0.75rem;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.field-help {
+  margin: -0.5rem 0 1rem;
+}
+
+/* ── Fields editor ───────────────────────────────────────────────────────── */
+.fields-editor .muted {
+  margin: 0.6rem 0 0;
+}
+.fields-editor code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  background: var(--surface-2);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+}
+.field-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin-bottom: 0.5rem;
 }
-@media (max-width: 700px) {
-  .design-picker {
-    grid-template-columns: 1fr;
-  }
+.field-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.field-row-name input {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+}
+.field-row-required {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.field-row-required input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--btn-bg);
+}
+.field-remove {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.field-remove:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.fields-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.6rem;
+}
+.fields-actions .regen-btn {
+  width: auto;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.fields-actions .regen-btn:hover:not(:disabled) {
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-text);
+}
+
+/* ── Mail design picker ──────────────────────────────────────────────────── */
+.design-picker {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 .design-options {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .design-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
   width: 100%;
-  display: block;
-  text-align: left;
-  padding: 0.55rem 0.7rem;
-  background: var(--white);
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
+  font-size: 1rem;
   font-weight: 500;
+  cursor: pointer;
 }
 .design-option:hover {
-  background: var(--cream);
-  border-color: var(--red);
+  border-color: var(--accent);
 }
 .design-option.selected {
-  border-color: var(--red);
-  background: var(--gold);
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.design-option input {
+  width: auto;
+  margin: 0.2rem 0 0;
+  accent-color: var(--btn-bg);
 }
 .design-name {
   display: block;
@@ -255,27 +937,54 @@ button:disabled {
   color: var(--muted);
   line-height: 1.35;
 }
+
 .design-preview {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--white);
+  background: var(--card);
   overflow: hidden;
 }
-.design-preview-label {
-  display: block;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.72rem;
+/* Collapsed by default: a full-height email preview would otherwise push the rest
+   of the form off a phone screen. */
+.design-preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--muted);
+  text-align: left;
 }
-.design-preview iframe {
+.design-preview-toggle:hover {
+  background: var(--surface-2);
+}
+.design-preview-toggle .disclosure {
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--accent);
+}
+.design-preview-body {
+  border-top: 1px solid var(--border);
+}
+.design-preview-body iframe {
   display: block;
   width: 100%;
-  height: 320px;
   border: 0;
   background: var(--white);
+}
+.design-preview-open {
+  display: block;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
 }
 .design-edit {
   margin-top: 0.9rem;
@@ -285,6 +994,82 @@ button:disabled {
 .design-edit .regen-btn {
   width: auto;
   margin-top: 0.5rem;
+}
+/* Auto-reply and spam-guard panels: same inputs as the register form, but inside an
+   app row, where the labels have to read as a compact stack. */
+.guard-editor label,
+.auto-reply-editor label {
+  font-size: 0.85rem;
+}
+.guard-editor input[type="number"] {
+  max-width: 8rem;
+}
+.auto-reply-editor textarea {
+  width: 100%;
+  min-height: 7rem;
+  font: inherit;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  resize: vertical;
+}
+/* Per-app activity (SPEC §4f): the same stat cards and table as the admin view, one
+   step smaller because they sit inside an app row rather than on their own page. */
+.activity-panel .stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.activity-panel .stat-card {
+  padding: 0.75rem 0.9rem;
+}
+.activity-panel .stat-value {
+  font-size: 1.3rem;
+}
+.activity-panel .stat-of {
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+/* SMTP replies and guard reasons are long — let one wrap instead of stretching the
+   table past the scroll wrapper. */
+.activity-detail {
+  max-width: 22rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  word-break: break-word;
+}
+
+/* Destination confirmation: inline code entry on an unverified app */
+.otp-panel {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+.otp-panel .otp-input {
+  max-width: 14rem;
+}
+.otp-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.checkbox-row input {
+  width: auto;
+  margin: 0.15rem 0 0;
+  accent-color: var(--btn-bg);
 }
 .secret {
   background: var(--gold);
@@ -302,18 +1087,7 @@ button:disabled {
   font-size: 0.85rem;
 }
 
-/* Dashboard topbar actions */
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.topbar-actions a {
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-/* Admin */
+/* ── Admin ───────────────────────────────────────────────────────────────── */
 .admin-nav {
   display: flex;
   gap: 1.25rem;
@@ -331,7 +1105,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-left: 4px solid var(--gold);
   border-radius: 10px;
@@ -340,22 +1114,29 @@ button:disabled {
 }
 .stat-card:hover {
   text-decoration: none;
-  border-left-color: var(--red);
+  border-left-color: var(--accent);
 }
 .stat-value {
   font-size: 1.8rem;
   font-weight: 700;
-  color: var(--red);
+  color: var(--accent);
 }
 .stat-label {
   color: var(--muted);
   font-size: 0.85rem;
 }
 
+/* Tables are wider than a phone. The wrapper scrolls sideways rather than letting
+   the layout blow out; `tabindex` on it would be needed for keyboard scrolling, so
+   the pager stays outside. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
@@ -369,12 +1150,13 @@ button:disabled {
   vertical-align: middle;
 }
 .admin-table th {
-  background: var(--cream);
+  background: var(--surface-2);
   color: var(--muted);
   font-weight: 600;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 .admin-table tr:last-child td {
   border-bottom: none;
@@ -392,12 +1174,13 @@ button:disabled {
   padding: 0.35rem 0.65rem;
   font-size: 0.8rem;
   background: transparent;
-  border: 1px solid var(--red);
-  color: var(--red);
+  border: 1px solid var(--accent);
+  color: var(--accent);
 }
 .admin-table td.actions button:hover:not(:disabled) {
-  background: var(--red);
-  color: var(--white);
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-text);
 }
 .admin-table td.actions button.danger {
   border-color: var(--danger);
@@ -405,7 +1188,7 @@ button:disabled {
 }
 .admin-table td.actions button.danger:hover:not(:disabled) {
   background: var(--danger);
-  color: var(--white);
+  color: var(--btn-text);
 }
 
 .tag {
@@ -439,9 +1222,9 @@ button:disabled {
   font-size: 0.85rem;
 }
 
-/* Docs */
+/* ── Docs ────────────────────────────────────────────────────────────────── */
 .doc-section {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-left: 4px solid var(--gold);
   border-radius: 10px;
@@ -451,10 +1234,20 @@ button:disabled {
 .doc-section h2 {
   margin: 0 0 0.75rem;
   font-size: 1.1rem;
-  color: var(--black);
+  color: var(--text);
 }
 .doc-section p {
   margin: 0 0 0.75rem;
+}
+.doc-section code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  background: var(--surface-2);
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
+}
+.doc-section pre code {
+  background: none;
 }
 .endpoint {
   display: flex;
@@ -468,8 +1261,8 @@ button:disabled {
   display: inline-block;
   padding: 0.15rem 0.55rem;
   border-radius: 6px;
-  background: var(--red);
-  color: var(--white);
+  background: var(--btn-bg);
+  color: var(--btn-text);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -520,26 +1313,14 @@ button:disabled {
 .doc-table code {
   font-family: ui-monospace, monospace;
   font-size: 0.82rem;
-  background: var(--cream);
+  background: var(--surface-2);
   padding: 0.1rem 0.35rem;
   border-radius: 5px;
 }
 .try-panel textarea {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  margin-bottom: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--white);
-  color: var(--text);
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
   resize: vertical;
-}
-.try-panel textarea:focus {
-  outline: none;
-  border-color: var(--red);
-  box-shadow: 0 0 0 3px rgba(190, 26, 26, 0.15);
 }
 .try-panel .send-btn {
   width: auto;
@@ -557,4 +1338,121 @@ button:disabled {
   font-family: ui-monospace, monospace;
   font-size: 0.82rem;
   margin: 0.5rem 0 0;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+/* The preview sits beside the options only when there is room for both. */
+@media (min-width: 780px) {
+  .design-picker {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    align-items: start;
+  }
+}
+
+@media (max-width: 720px) {
+  .site-header-inner {
+    padding: 0.55rem 1rem;
+  }
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: auto;
+    padding: 0.5rem 0.8rem;
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 0.9rem;
+  }
+  .nav-toggle:hover {
+    background: transparent;
+  }
+  .site-nav {
+    display: none;
+    order: 3;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    border-top: 1px solid var(--border);
+  }
+  .site-nav.open {
+    display: flex;
+  }
+  .site-nav a,
+  .site-nav button {
+    padding: 0.85rem 0.25rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  .site-nav button {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+  }
+  .nav-cta {
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .wrap {
+    padding: 1.5rem 1rem;
+  }
+  .card {
+    padding: 1.35rem;
+  }
+  .center {
+    padding: 1.5rem 1rem;
+  }
+  .site-footer-inner {
+    padding: 1rem;
+  }
+  /* Rules still separate the blocks, so less air is needed between them. */
+  .landing-section {
+    padding: 2.25rem 0;
+  }
+
+  /* Stack the action column under the app's details instead of squeezing both. */
+  .app-item-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .app-item-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .app-item .regen-btn,
+  .fields-actions .regen-btn,
+  .field-remove {
+    min-height: 44px;
+  }
+
+  /* Field name, Required and Remove don't fit on one line at this width. */
+  .field-row {
+    flex-wrap: wrap;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .field-row-name {
+    flex: 1 1 100%;
+  }
+  .field-row-required {
+    flex: 1 1 auto;
+  }
+
+  .step-list li {
+    padding: 1rem;
+  }
+  .hero {
+    padding: 1.5rem 0 2rem;
+  }
+  .hero-actions .btn-primary,
+  .hero-actions .btn-secondary {
+    flex: 1 1 100%;
+  }
+  .page-header {
+    margin-bottom: 1.5rem;
+  }
 }

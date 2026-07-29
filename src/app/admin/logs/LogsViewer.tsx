@@ -6,9 +6,19 @@ type Log = {
   id: string;
   websiteName: string;
   destinationEmail: string;
-  status: "sent" | "smtp_failed";
+  kind: "submission" | "autoresponse";
+  status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam";
   error: string | null;
   createdAt: string;
+};
+
+// `blocked_*` rows never reached SMTP — the bot or content guard refused them
+// (SPEC §4d), which is a different fact from a failed send.
+const STATUS_LABEL: Record<Log["status"], string> = {
+  sent: "Sent",
+  smtp_failed: "Failed",
+  blocked_bot: "Blocked (bot)",
+  blocked_spam: "Blocked (spam)",
 };
 
 export function LogsViewer() {
@@ -42,12 +52,14 @@ export function LogsViewer() {
 
   return (
     <>
-      <table className="admin-table">
+      <div className="table-scroll">
+        <table className="admin-table">
         <thead>
           <tr>
             <th>When</th>
             <th>Website</th>
             <th>Destination</th>
+            <th>Email</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -57,15 +69,17 @@ export function LogsViewer() {
               <td>{new Date(l.createdAt).toLocaleString()}</td>
               <td>{l.websiteName}</td>
               <td>{l.destinationEmail}</td>
+              <td>{l.kind === "autoresponse" ? "Auto-reply" : "Submission"}</td>
               <td>
                 <span className={l.status === "sent" ? "status-ok" : "status-fail"}>
-                  {l.status === "sent" ? "Sent" : "Failed"}
+                  {STATUS_LABEL[l.status]}
                 </span>
               </td>
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
       <div className="pager">
         <button type="button" disabled={page <= 0} onClick={() => setPage((p) => p - 1)}>
           ← Prev
