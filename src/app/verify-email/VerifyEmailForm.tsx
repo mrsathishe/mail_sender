@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { LogoutButton } from "@/components/LogoutButton";
 
 const MESSAGES: Record<string, string> = {
@@ -12,7 +12,6 @@ const MESSAGES: Record<string, string> = {
 };
 
 export function VerifyEmailForm({ email }: { email: string }) {
-  const router = useRouter();
   // register redirects here with ?sent=0 when the code mail didn't go out, so the
   // page doesn't promise an email that never left.
   const sendFailed = useSearchParams().get("sent") === "0";
@@ -32,12 +31,16 @@ export function VerifyEmailForm({ email }: { email: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: form.get("code") }),
     });
-    setLoading(false);
     if (res.ok) {
-      router.push("/dashboard");
-      router.refresh();
+      // Verified. That response re-minted the session cookie, so leave via a full
+      // navigation rather than a client push: it is what guarantees the header and
+      // the edge gate both read the new `emailVerified` claim instead of a cached
+      // render (same reason LogoutButton does it). Keep the button disabled until
+      // the dashboard takes over.
+      window.location.assign("/dashboard");
       return;
     }
+    setLoading(false);
     const data = await res.json().catch(() => ({}));
     setError(MESSAGES[data.error] ?? "Could not verify that code.");
   }

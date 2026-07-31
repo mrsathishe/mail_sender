@@ -470,7 +470,11 @@ await fetch("${attachmentEndpoint}", {
             "cannot make it: the key would be visible in the page, and a plain form " +
             "cannot send the `Authorization` header it needs. The pattern for a static " +
             "or client-rendered site is the last pair below — the form posts to a small " +
-            "route you own, and that route forwards the fields with the key.",
+            "route you own, and that route forwards the fields with the key.\n\n" +
+            "**Nothing here answers with a redirect.** Every response is JSON plus an " +
+            "HTTP status, whether the caller is your server or a browser, so what a " +
+            "visitor sees on success — a message in place, or a move to a thank-you " +
+            "page — stays your decision.",
         },
         {
           kind: "code",
@@ -501,13 +505,30 @@ await fetch("${endpoint}", {
           kind: "code",
           label: "HTML form → your own route",
           code: `<!-- The form posts to your site, not to us. No key in the browser. -->
-<form method="POST" action="/api/contact">
+<form id="contact" method="POST" action="/api/contact">
   <input name="name" placeholder="Your name" required />
   <input name="email" type="email" placeholder="Your email" required />
   <input name="phone" placeholder="Phone (optional)" />
   <textarea name="message" placeholder="Message" required></textarea>
   <button type="submit">Send</button>
-</form>`,
+  <p id="form-status" role="status"></p>
+</form>
+
+<script>
+  const form = document.getElementById("contact");
+  const statusEl = document.getElementById("form-status");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    statusEl.textContent = "Sending…";
+    const res = await fetch(form.action, { method: "POST", body: new FormData(form) });
+    // Your route answers with JSON, never a redirect, so this page decides what
+    // happens next — a message here, or location.assign("/thanks") instead.
+    statusEl.textContent = res.ok
+      ? "Thanks — your message is on its way."
+      : "Sorry, that didn't send. Please try again.";
+    if (res.ok) form.reset();
+  });
+</script>`,
         },
         {
           kind: "code",
@@ -525,9 +546,10 @@ export async function POST(request) {
     body: JSON.stringify(Object.fromEntries(form)),
   });
 
-  // 303 so the browser follows with GET and a refresh doesn't re-submit.
-  const next = res.ok ? "/thanks" : "/contact?error=1";
-  return Response.redirect(new URL(next, request.url), 303);
+  // JSON in, JSON out — no redirect. Pass our status through so the page can tell
+  // success from failure and show whatever it likes.
+  const data = await res.json().catch(() => ({}));
+  return Response.json(data, { status: res.status });
 }`,
         },
       ],

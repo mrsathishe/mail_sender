@@ -161,7 +161,9 @@ same key, same fields, same responses, with the whole request capped at 5MB rath
 part is refused with `422 attachments_not_enabled`. Accepted types are checked by their
 *contents*, not their name. The dashboard's **Get the code** button on each app row
 generates the form, the forwarding route and a cURL example from that app's own fields
-and settings, so the snippet always matches the contract the endpoint enforces.
+and settings, so the snippet always matches the contract the endpoint enforces. Every
+response is JSON plus an HTTP status — the API never answers with a redirect, so showing a
+message or moving the visitor to a thank-you page is your site's decision.
 
 Each declared field becomes one row of the HTML email, with a `Key: value`
 plain-text alternative:

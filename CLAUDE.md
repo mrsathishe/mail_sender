@@ -209,7 +209,12 @@ renames a field, after which it produces `400 unknown_field` and reads like our 
 the form markup, the forwarding route, and the cURL/fetch samples are all built from that
 app's real `fields`, `spamGuard` names and `attachments` setting, including which of the
 two endpoints it should post to. It reuses `titleize()` from `flatten.ts` for labels, so a
-field reads the same in the form and in the email.
+field reads the same in the form and in the email. The generated form submits with `fetch`
+and the forwarding route answers **JSON, passing our status through** — deliberately not a
+`303` to a `/thanks` page, because this service is a REST API for servers and browsers
+alike and the caller owns what a visitor then sees. Nothing under `/api` ever replies with
+a redirect; the only `Response.redirect` in the app is page gating in
+[proxy.ts](src/proxy.ts), which answers a browser *navigation*, not an API call.
 
 **Two things are verified by emailed OTP, with one helper.**
 [src/lib/otp.ts](src/lib/otp.ts) owns code generation and checking (8 chars from a

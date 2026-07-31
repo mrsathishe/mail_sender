@@ -110,14 +110,28 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
       `  <input type="hidden" id="f-elapsed" name="${attr(spamGuard.timingField)}" value="0" />`
     : "";
 
-  const timingScript = spamGuard.timingField
-    ? `\n<script>\n` +
-      `  const shownAt = Date.now();\n` +
-      `  document.getElementById("contact").addEventListener("submit", () => {\n` +
-      `    document.getElementById("f-elapsed").value = Date.now() - shownAt;\n` +
-      `  });\n` +
-      `</script>`
-    : "";
+  // One submit handler, timing or not: it posts with fetch so the visitor stays on the
+  // page, which is what lets the forwarding route answer with JSON instead of a redirect.
+  const script =
+    `\n<script>\n` +
+    `  const form = document.getElementById("contact");\n` +
+    `  const statusEl = document.getElementById("form-status");\n` +
+    (spamGuard.timingField ? `  const shownAt = Date.now();\n` : "") +
+    `  form.addEventListener("submit", async (event) => {\n` +
+    `    event.preventDefault();\n` +
+    (spamGuard.timingField
+      ? `    document.getElementById("f-elapsed").value = Date.now() - shownAt;\n`
+      : "") +
+    `    statusEl.textContent = "Sending…";\n` +
+    `    const res = await fetch(form.action, { method: "POST", body: new FormData(form) });\n` +
+    `    // Your route answers with JSON, never a redirect, so this page decides what\n` +
+    `    // happens next — a message here, or location.assign("/thanks") instead.\n` +
+    `    statusEl.textContent = res.ok\n` +
+    `      ? "Thanks — your message is on its way."\n` +
+    `      : "Sorry, that didn't send. Please try again.";\n` +
+    `    if (res.ok) form.reset();\n` +
+    `  });\n` +
+    `</script>`;
 
   const fileInput = attachments.enabled
     ? `\n\n  <!-- Up to ${attachments.maxFiles} file(s); the whole request must stay under the\n` +
@@ -134,7 +148,8 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
     `<form id="contact" method="POST" action="/api/contact"${enctype}>\n` +
     `${controls}${fileInput}${honeypot}${timing}\n\n` +
     `  <button type="submit">Send</button>\n` +
-    `</form>${timingScript}`;
+    `  <p id="form-status" role="status"></p>\n` +
+    `</form>${script}`;
 
   // The forwarding route. With attachments the incoming FormData is passed straight
   // through — re-serialising it would drop the files, and fetch sets the multipart
@@ -150,9 +165,10 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
       `    headers: { "Authorization": \`Bearer \${process.env.MAIL_SENDER_KEY}\` },\n` +
       `    body: form,\n` +
       `  });\n\n` +
-      `  // 303 so the browser follows with GET and a refresh doesn't re-submit.\n` +
-      `  const next = res.ok ? "/thanks" : "/contact?error=1";\n` +
-      `  return Response.redirect(new URL(next, request.url), 303);\n` +
+      `  // JSON in, JSON out — no redirect. Pass our status through so your page can\n` +
+      `  // tell success from failure and show whatever it likes.\n` +
+      `  const data = await res.json().catch(() => ({}));\n` +
+      `  return Response.json(data, { status: res.status });\n` +
       `}`
     : `// app/api/contact/route.js — runs on your server, where the key is safe.\n` +
       `export async function POST(request) {\n` +
@@ -165,9 +181,10 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
       `    },\n` +
       `    body: JSON.stringify(Object.fromEntries(form)),\n` +
       `  });\n\n` +
-      `  // 303 so the browser follows with GET and a refresh doesn't re-submit.\n` +
-      `  const next = res.ok ? "/thanks" : "/contact?error=1";\n` +
-      `  return Response.redirect(new URL(next, request.url), 303);\n` +
+      `  // JSON in, JSON out — no redirect. Pass our status through so your page can\n` +
+      `  // tell success from failure and show whatever it likes.\n` +
+      `  const data = await res.json().catch(() => ({}));\n` +
+      `  return Response.json(data, { status: res.status });\n` +
       `}`;
 
   const sample: Record<string, string> = {};
