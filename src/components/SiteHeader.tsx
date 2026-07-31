@@ -15,6 +15,7 @@ export async function SiteHeader() {
     ? [
         { href: "/dashboard", label: "Dashboard" },
         { href: "/docs", label: "API docs" },
+        { href: "/contact", label: "Contact" },
         ...(session.role === "admin" ? [{ href: "/admin", label: "Admin" }] : []),
       ]
     : [
@@ -22,6 +23,7 @@ export async function SiteHeader() {
         // `/dashboard`, so the link would be a dead end for anyone signed in.
         { href: "/", label: "Home" },
         { href: "/docs", label: "API docs" },
+        { href: "/contact", label: "Contact" },
         { href: "/login", label: "Sign in" },
         { href: "/register", label: "Get started", cta: true },
       ];

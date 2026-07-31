@@ -10,18 +10,25 @@ import { useEffect, useState } from "react";
 type Log = {
   id: string;
   kind: "submission" | "autoresponse";
-  status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam";
+  status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam" | "blocked_attachment";
   error: string | null;
   createdAt: string;
 };
 
-type Counts = { sent: number; smtp_failed: number; blocked_bot: number; blocked_spam: number };
+type Counts = {
+  sent: number;
+  smtp_failed: number;
+  blocked_bot: number;
+  blocked_spam: number;
+  blocked_attachment: number;
+};
 
 const STATUS_LABEL: Record<Log["status"], string> = {
   sent: "Sent",
   smtp_failed: "Failed",
   blocked_bot: "Blocked (bot)",
   blocked_spam: "Blocked (spam)",
+  blocked_attachment: "Blocked (attachment)",
 };
 
 export function ActivityPanel({ appId }: { appId: string }) {
@@ -81,7 +88,9 @@ export function ActivityPanel({ appId }: { appId: string }) {
             <div className="stat-label">Failed</div>
           </div>
           <div className="stat-card">
-            <div className="stat-value">{counts.blocked_bot + counts.blocked_spam}</div>
+            <div className="stat-value">
+              {counts.blocked_bot + counts.blocked_spam + counts.blocked_attachment}
+            </div>
             <div className="stat-label">Blocked</div>
           </div>
           <div className="stat-card">

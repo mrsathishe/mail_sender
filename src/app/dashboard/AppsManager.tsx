@@ -5,10 +5,17 @@ import { DesignPicker, type Design } from "./DesignPicker";
 import { FieldsEditor } from "./FieldsEditor";
 import { SpamGuardEditor } from "./SpamGuardEditor";
 import { AutoReplyEditor } from "./AutoReplyEditor";
+import { AttachmentsEditor } from "./AttachmentsEditor";
+import { CodeSnippets } from "./CodeSnippets";
 import { ActivityPanel } from "./ActivityPanel";
 import { DEFAULT_FIELDS, type AppField } from "@/lib/fields";
 import { SPAM_GUARD_OFF, type SpamGuard } from "@/lib/bot-guard";
 import { AUTO_RESPONDER_OFF, type AutoResponder } from "@/lib/auto-responder";
+import {
+  ATTACHMENTS_OFF,
+  MAX_ATTACHMENTS_CEILING,
+  type AttachmentConfig,
+} from "@/lib/attachments";
 
 type App = {
   id: string;
@@ -21,6 +28,7 @@ type App = {
   // the row — the API resolves both, but the fallback is one `??` away.
   spamGuard?: SpamGuard;
   autoResponder?: AutoResponder;
+  attachments?: AttachmentConfig;
   createdAt: string;
 };
 
@@ -48,6 +56,8 @@ const GUARD_MESSAGES: Record<string, string> = {
   timing_field_missing: "A minimum time needs a timing field name to measure against.",
   invalid_auto_reply: "That auto-reply isn't valid. Check the subject and message.",
   auto_reply_too_long: "The auto-reply subject or message is too long.",
+  invalid_attachments: "Those attachment settings aren't valid.",
+  invalid_max_files: `The file limit must be a whole number, 1–${MAX_ATTACHMENTS_CEILING}.`,
 };
 
 // One line for the app row: which of the two bot signals are actually armed.
@@ -61,9 +71,11 @@ function guardSummary(guard: SpamGuard): string {
 export function AppsManager({
   designs,
   accountEmail,
+  baseUrl,
 }: {
   designs: Design[];
   accountEmail: string;
+  baseUrl: string;
 }) {
   const [apps, setApps] = useState<App[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -100,9 +112,17 @@ export function AppsManager({
     autoResponder: AutoResponder;
   } | null>(null);
   const [savingReply, setSavingReply] = useState(false);
+  // Same, for file attachments.
+  const [editingAttachments, setEditingAttachments] = useState<{
+    id: string;
+    attachments: AttachmentConfig;
+  } | null>(null);
+  const [savingAttachments, setSavingAttachments] = useState(false);
   // Which app's delivery history is open. Mounted lazily so no app fetches its logs
   // until asked for them.
   const [activityId, setActivityId] = useState<string | null>(null);
+  // Which app's generated integration code is open.
+  const [codeId, setCodeId] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch("/api/apps");
@@ -298,6 +318,31 @@ export function AppsManager({
     }
     const data = await res.json().catch(() => ({}));
     setError(GUARD_MESSAGES[data.error] ?? "Could not save the auto-reply. Please try again.");
+  }
+
+  async function onSaveAttachments() {
+    if (!editingAttachments) return;
+    setError("");
+    setNotice("");
+    setSavingAttachments(true);
+    const res = await fetch(`/api/apps/${editingAttachments.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attachments: editingAttachments.attachments }),
+    });
+    setSavingAttachments(false);
+    if (res.ok) {
+      setEditingAttachments(null);
+      setNotice(
+        editingAttachments.attachments.enabled
+          ? "Attachments saved. Post to /api/v1/sendWithAttachment to send files."
+          : "Attachments saved and switched off."
+      );
+      load();
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    setError(GUARD_MESSAGES[data.error] ?? "Could not save the attachment settings.");
   }
 
   async function onCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -513,6 +558,12 @@ export function AppsManager({
                     · Spam guard:{" "}
                     {guardSummary(a.spamGuard ?? SPAM_GUARD_OFF) || (
                       <span className="muted">off</span>
+                    )}{" "}
+                    · Attachments:{" "}
+                    {a.attachments?.enabled ? (
+                      <span className="status-ok">up to {a.attachments.maxFiles}</span>
+                    ) : (
+                      <span className="muted">off</span>
                     )}
                   </p>
                   {!a.destinationVerified && (
@@ -579,6 +630,28 @@ export function AppsManager({
                     }
                   >
                     {editingGuard?.id === a.id ? "Cancel" : "Spam guard"}
+                  </button>
+                  <button
+                    type="button"
+                    className="regen-btn"
+                    aria-expanded={editingAttachments?.id === a.id}
+                    onClick={() =>
+                      setEditingAttachments(
+                        editingAttachments?.id === a.id
+                          ? null
+                          : { id: a.id, attachments: { ...(a.attachments ?? ATTACHMENTS_OFF) } }
+                      )
+                    }
+                  >
+                    {editingAttachments?.id === a.id ? "Cancel" : "Attachments"}
+                  </button>
+                  <button
+                    type="button"
+                    className="regen-btn"
+                    aria-expanded={codeId === a.id}
+                    onClick={() => setCodeId(codeId === a.id ? null : a.id)}
+                  >
+                    {codeId === a.id ? "Hide code" : "Get the code"}
                   </button>
                   <button
                     type="button"
@@ -683,6 +756,42 @@ export function AppsManager({
                   >
                     {savingGuard ? "Saving…" : "Save spam guard"}
                   </button>
+                </div>
+              )}
+
+              {editingAttachments?.id === a.id && (
+                <div className="design-edit">
+                  <AttachmentsEditor
+                    attachments={editingAttachments.attachments}
+                    onChange={(attachments) => setEditingAttachments({ id: a.id, attachments })}
+                    idPrefix={`attachments-${a.id}`}
+                  />
+                  <button
+                    type="button"
+                    className="regen-btn"
+                    disabled={savingAttachments}
+                    onClick={onSaveAttachments}
+                  >
+                    {savingAttachments ? "Saving…" : "Save attachments"}
+                  </button>
+                </div>
+              )}
+
+              {codeId === a.id && (
+                <div className="design-edit">
+                  <CodeSnippets
+                    // The endpoint follows the setting: an app that accepts files has to
+                    // post multipart to the other route, so handing it the JSON snippet
+                    // would be handing it a snippet that drops the attachment.
+                    endpoint={
+                      a.attachments?.enabled
+                        ? `${baseUrl}/api/v1/sendWithAttachment`
+                        : `${baseUrl}/api/v1/send`
+                    }
+                    fields={a.fields}
+                    spamGuard={a.spamGuard ?? SPAM_GUARD_OFF}
+                    attachments={a.attachments ?? ATTACHMENTS_OFF}
+                  />
                 </div>
               )}
 

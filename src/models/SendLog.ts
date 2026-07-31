@@ -13,12 +13,12 @@ const SendLogSchema = new Schema(
     // allowance, so both have to be visible; defaulted, so existing rows read as
     // submissions without a migration.
     kind: { type: String, enum: ["submission", "autoresponse"], default: "submission" },
-    // `blocked_*` rows never reached SMTP — they are the bot and content guards
-    // refusing a submission (SPEC §4d), recorded because "my form went quiet" is
-    // otherwise unanswerable for the owner.
+    // `blocked_*` rows never reached SMTP — they are the bot, content and attachment
+    // guards refusing a submission (SPEC §4d), recorded because "my form went
+    // quiet" is otherwise unanswerable for the owner.
     status: {
       type: String,
-      enum: ["sent", "smtp_failed", "blocked_bot", "blocked_spam"],
+      enum: ["sent", "smtp_failed", "blocked_bot", "blocked_spam", "blocked_attachment"],
       required: true,
     },
     // Why a non-`sent` row ended that way: the provider's own SMTP reply, or which
@@ -41,7 +41,12 @@ SendLogSchema.index({ appId: 1, createdAt: -1 });
 export const SEND_LOG_TTL_DAYS = 90;
 SendLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: SEND_LOG_TTL_DAYS * 86_400 });
 
-export type SendLogStatus = "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam";
+export type SendLogStatus =
+  | "sent"
+  | "smtp_failed"
+  | "blocked_bot"
+  | "blocked_spam"
+  | "blocked_attachment";
 export type SendLogKind = "submission" | "autoresponse";
 
 export type SendLogDoc = InferSchemaType<typeof SendLogSchema> & { _id: Types.ObjectId };

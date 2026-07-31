@@ -3,7 +3,12 @@
 // "Key: value" plain-text alternative (SPEC §4). The designs themselves live in
 // ./templates.
 
-function titleize(key: string): string {
+/**
+ * `phone_number` → "Phone number". Exported because the same rule turns a declared
+ * field name into a form label in the dashboard's generated snippets — an email row and
+ * a form label reading differently for the same field would be its own small confusion.
+ */
+export function titleize(key: string): string {
   const spaced = key.replace(/[_-]+/g, " ").trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

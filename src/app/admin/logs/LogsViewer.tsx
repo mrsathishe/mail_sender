@@ -7,18 +7,19 @@ type Log = {
   websiteName: string;
   destinationEmail: string;
   kind: "submission" | "autoresponse";
-  status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam";
+  status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam" | "blocked_attachment";
   error: string | null;
   createdAt: string;
 };
 
-// `blocked_*` rows never reached SMTP — the bot or content guard refused them
-// (SPEC §4d), which is a different fact from a failed send.
+// `blocked_*` rows never reached SMTP — the bot, content or attachment guard refused
+// them (SPEC §4d), which is a different fact from a failed send.
 const STATUS_LABEL: Record<Log["status"], string> = {
   sent: "Sent",
   smtp_failed: "Failed",
   blocked_bot: "Blocked (bot)",
   blocked_spam: "Blocked (spam)",
+  blocked_attachment: "Blocked (attachment)",
 };
 
 export function LogsViewer() {

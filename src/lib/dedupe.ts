@@ -6,20 +6,30 @@ import { SendDedupe } from "@/models/SendDedupe";
 // The case this exists for is mundane: a visitor double-clicks submit, or a
 // customer's form retries on a slow response, and the destination inbox gets the
 // same email twice. Against a capped sending allowance that is pure waste, so a
-// repeat inside the window is answered `202` — the caller asked for the submission
+// repeat inside the window is answered `200` — the caller asked for the submission
 // to be delivered, and it was.
 
 /** How long an identical submission is treated as already handled. */
 export const DEDUPE_WINDOW_MS = 60_000;
 
 /**
- * Identity of a submission: the app plus its canonicalised fields. Safe to stringify
- * because the data has already been through `orderSubmission()`, so key order is the
- * app's declared order rather than whatever the client happened to serialise — two
- * identical submissions therefore hash the same.
+ * Identity of a submission: the app plus its canonicalised fields, plus the bytes of
+ * any attachment. Safe to stringify because the data has already been through
+ * `orderSubmission()`, so key order is the app's declared order rather than whatever
+ * the client happened to serialise — two identical submissions therefore hash the same.
+ *
+ * File bytes go into the same hash rather than a digest of their own: the same text
+ * with a different file is not a repeat, and neither is the same filename and size
+ * carrying different content, which a name/size summary could not tell apart.
  */
-function submissionKey(appId: string, data: Record<string, unknown>): string {
-  return createHash("sha256").update(`${appId}:${JSON.stringify(data)}`).digest("hex");
+function submissionKey(
+  appId: string,
+  data: Record<string, unknown>,
+  files: Uint8Array[]
+): string {
+  const hash = createHash("sha256").update(`${appId}:${JSON.stringify(data)}`);
+  for (const bytes of files) hash.update(bytes);
+  return hash.digest("hex");
 }
 
 /**
@@ -35,9 +45,10 @@ function submissionKey(appId: string, data: Record<string, unknown>): string {
  */
 export async function claimSubmission(
   appId: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  files: Uint8Array[] = []
 ): Promise<{ fresh: true; key: string } | { fresh: false }> {
-  const key = submissionKey(appId, data);
+  const key = submissionKey(appId, data, files);
   const now = new Date();
   try {
     await SendDedupe.findOneAndUpdate(
@@ -54,7 +65,7 @@ export async function claimSubmission(
 
 /**
  * Drop a claim so an immediate retry is allowed again. Called when the send failed:
- * leaving the claim in place would answer a legitimate retry with `202` while no
+ * leaving the claim in place would answer a legitimate retry with `200` while no
  * mail had ever gone out, which is worse than a duplicate.
  */
 export async function releaseSubmission(key: string): Promise<void> {

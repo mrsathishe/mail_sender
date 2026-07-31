@@ -2,6 +2,7 @@ import { Schema, model, models, Types, type Model, type InferSchemaType } from "
 import { DEFAULT_TEMPLATE_ID, TEMPLATE_IDS } from "@/lib/templates";
 import { DEFAULT_FIELDS } from "@/lib/fields";
 import { MAX_MIN_SUBMIT_SECONDS } from "@/lib/bot-guard";
+import { DEFAULT_MAX_ATTACHMENTS, MAX_ATTACHMENTS_CEILING } from "@/lib/attachments";
 import { AUTO_MESSAGE_MAX, AUTO_SUBJECT_MAX } from "@/lib/auto-responder";
 
 // Subdocument, so a field is one row with its own `required` flag rather than two
@@ -40,6 +41,23 @@ const AutoResponderSchema = new Schema(
   { _id: false }
 );
 
+// Whether this app's form may carry files, and how many. Off by default like the two
+// above: a 5MB upload endpoint that every existing key could reach would turn a leaked
+// key into a relay, and the owner is the only one who knows their form has a file input
+// at all.
+const AttachmentsSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    maxFiles: {
+      type: Number,
+      default: DEFAULT_MAX_ATTACHMENTS,
+      min: 1,
+      max: MAX_ATTACHMENTS_CEILING,
+    },
+  },
+  { _id: false }
+);
+
 const AppSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -69,6 +87,8 @@ const AppSchema = new Schema(
     // and no migration is needed (SPEC §4d, §4e).
     spamGuard: { type: SpamGuardSchema, default: () => ({}) },
     autoResponder: { type: AutoResponderSchema, default: () => ({}) },
+    // Same reasoning, and the same absence of a migration.
+    attachments: { type: AttachmentsSchema, default: () => ({}) },
     // sha256 of the secret key — the plaintext key is shown once and never stored.
     secretKeyHash: { type: String, required: true, unique: true, index: true },
   },

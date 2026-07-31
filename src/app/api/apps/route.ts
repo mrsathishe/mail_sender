@@ -9,6 +9,7 @@ import { DEFAULT_TEMPLATE_ID, TEMPLATE_IDS, resolveTemplateId } from "@/lib/temp
 import { DEFAULT_FIELDS, parseFields, resolveFields } from "@/lib/fields";
 import { resolveSpamGuard } from "@/lib/bot-guard";
 import { resolveAutoResponder } from "@/lib/auto-responder";
+import { resolveAttachmentConfig } from "@/lib/attachments";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function GET() {
   const apps = await App.find({ userId: session.userId })
     .sort({ createdAt: -1 })
     .select(
-      "websiteName destinationEmail destinationVerified templateId fields spamGuard autoResponder createdAt"
+      "websiteName destinationEmail destinationVerified templateId fields spamGuard autoResponder attachments createdAt"
     )
     .lean();
 
@@ -39,6 +40,7 @@ export async function GET() {
       // Same again — an app registered before the guards reads back as "off".
       spamGuard: resolveSpamGuard(a.spamGuard),
       autoResponder: resolveAutoResponder(a.autoResponder),
+      attachments: resolveAttachmentConfig(a.attachments),
       createdAt: a.createdAt,
     })),
   });
@@ -46,7 +48,7 @@ export async function GET() {
 
 const createSchema = z.object({
   websiteName: z.string().min(1).max(100),
-  destinationEmail: z.string().email(),
+  destinationEmail: z.email(),
   templateId: z.enum(TEMPLATE_IDS).default(DEFAULT_TEMPLATE_ID),
   // Shape only — the names themselves are checked by parseFields, which owns the
   // rules and reports which rule was broken.

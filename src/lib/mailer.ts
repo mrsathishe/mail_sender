@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import type { MailAttachment } from "./attachments";
 import { env } from "./env";
 
 let transporter: Transporter | null = null;
@@ -32,6 +33,10 @@ export async function sendMail(opts: {
   // `from` is always our own address: putting the submitter there is spoofing and
   // fails DMARC (HARDENING_ROADMAP §2.1).
   replyTo?: string;
+  // Already validated by attachments.ts — filename sanitised, contentType confirmed
+  // against the bytes. Wrapping in Buffer happens here so that module can stay free
+  // of Node built-ins and be read by the dashboard's client editor.
+  attachments?: MailAttachment[];
 }): Promise<void> {
   await getTransporter().sendMail({
     from: env.smtpFrom,
@@ -40,5 +45,10 @@ export async function sendMail(opts: {
     subject: opts.subject,
     text: opts.text,
     html: opts.html,
+    attachments: opts.attachments?.map((a) => ({
+      filename: a.filename,
+      content: Buffer.from(a.content),
+      contentType: a.contentType,
+    })),
   });
 }

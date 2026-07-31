@@ -25,8 +25,8 @@ Internet ──▶ nginx :80/:443 (per-domain server block)
 Do this **once per server**, not per project.
 
 ```bash
-# Node 20 LTS (via nodesource) — needed by Next.js / node apps
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# Node 22 LTS (via nodesource) — needed by Next.js / node apps
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # nginx + certbot for reverse proxy + HTTPS

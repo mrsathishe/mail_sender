@@ -8,9 +8,8 @@ import { getSession } from "@/lib/auth";
 import { baseUrlFrom } from "@/lib/base-url";
 import { env } from "@/lib/env";
 import { BRAND_FULL, BRAND_TAGLINE, CONTACT_EMAIL } from "@/lib/brand";
-import { TEMPLATE_LIST, DEFAULT_TEMPLATE_ID, TEMPLATES, renderPreviewHtml } from "@/lib/templates";
+import { TEMPLATE_LIST } from "@/lib/templates";
 import { DEFAULT_FIELDS } from "@/lib/fields";
-import { CodeBlock } from "./docs/CodeBlock";
 // Statically imported so next/image knows the intrinsic size at build time and the
 // hero cannot shift while it loads.
 import logoLockup from "../../public/logo-lockup.png";
@@ -64,21 +63,6 @@ const NOT_FOR = [
   "Attachments and file uploads. Submissions are text fields only.",
 ];
 
-const STEPS = [
-  {
-    title: "Register your app",
-    body: "Create an account, add your website and the inbox that should receive its submissions. We email that address a code to confirm it agreed to receive them.",
-  },
-  {
-    title: "Copy the secret key",
-    body: "Each app gets one key, shown once. Keep it on your server and rotate it whenever you like — the old one stops working immediately.",
-  },
-  {
-    title: "POST your form",
-    body: "One authenticated request per submission. We format it into an email, set Reply-To to whoever filled the form, and deliver it to your inbox.",
-  },
-];
-
 const FEATURES = [
   {
     title: "Any inbox, any provider",
@@ -107,33 +91,6 @@ const FEATURES = [
   {
     title: "Every attempt logged",
     body: "Successes and failures are recorded with the mail server's own response, so a missing email is something you can actually diagnose.",
-  },
-];
-
-const FAQ = [
-  {
-    q: "What does it cost?",
-    a: "Nothing. It sends through one mailbox we already pay for, which is exactly why there is a published daily cap per app and why it carries form submissions only — not newsletters, and not transactional mail for your own users.",
-  },
-  {
-    q: "Do I need a server to use it?",
-    a: "You need somewhere server-side to hold the key — a serverless function, a small API route, or your host's form handler. The key travels in a request header, which a plain HTML form can't set, and anything in page JavaScript is readable by anyone. A static site works fine: it posts to a small route of its own that forwards the submission.",
-  },
-  {
-    q: "How many emails can I send?",
-    a: `${env.appDailySendLimit} a day per app, on the UTC day, reset at midnight. Past that, submissions are refused with a 429 rather than dropped silently. It's a limit we can raise — email us if your form legitimately needs more.`,
-  },
-  {
-    q: "Which email address does the mail come from?",
-    a: "Always ours. The person who filled in your form goes into Reply-To instead, because sending as a stranger's address is spoofing and fails SPF and DMARC checks.",
-  },
-  {
-    q: "Can I send to an address I don't own?",
-    a: "Only if that address confirms it. We email it an eight-character code, and until the code is entered the app has no working secret key at all.",
-  },
-  {
-    q: "What happens if a submission has a field I didn't declare?",
-    a: "It is rejected with a 400 and the offending field name, and no email is sent. Add the field to the app in the dashboard and the same request succeeds.",
   },
 ];
 
@@ -167,20 +124,10 @@ export default async function Home() {
   if (session) redirect("/dashboard");
 
   const base = baseUrlFrom(await headers());
-  const example = `curl -X POST ${base}/api/v1/send \\
-  -H "Authorization: Bearer YOUR_SECRET_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"name":"Jane Doe","email":"jane@example.com","message":"Hello!"}'`;
-
-  // The same sample the dashboard picker shows, rendered here rather than fetched
-  // from /api/templates/[id]/preview — that route is for signed-in users, and this
-  // page's whole job is to work before anyone has an account. srcDoc keeps it inert:
-  // sandbox="" means no scripts, no forms and no network from inside the frame.
-  const sampleDesign = TEMPLATES[DEFAULT_TEMPLATE_ID];
-  const sampleHtml = renderPreviewHtml(DEFAULT_TEMPLATE_ID);
 
   // Structured data mirrors what is visible on the page — describing content that
-  // isn't here is what gets rich results revoked.
+  // isn't here is what gets rich results revoked. The `FAQPage` node moved to
+  // /contact with the questions themselves, for that reason.
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
@@ -200,14 +147,6 @@ export default async function Home() {
         url: `${base}/`,
         description: BRAND_TAGLINE,
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      },
-      {
-        "@type": "FAQPage",
-        mainEntity: FAQ.map((item) => ({
-          "@type": "Question",
-          name: item.q,
-          acceptedAnswer: { "@type": "Answer", text: item.a },
-        })),
       },
     ],
   };
@@ -282,50 +221,6 @@ export default async function Home() {
         </div>
       </Section>
 
-      <Section id="how" label="Getting started" title="How it works">
-        <ol className="step-list">
-          {STEPS.map((step, i) => (
-            <li key={step.title}>
-              <span className="step-number" aria-hidden="true">
-                {i + 1}
-              </span>
-              <div>
-                <h3>{step.title}</h3>
-                <p>{step.body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      <Section id="example" label="Integration" title="One request per submission">
-        <CodeBlock code={example} />
-        <p>
-          A <code>202</code> means the email is on its way. Full reference, response
-          codes and a live tester are in the <Link href="/docs">API documentation</Link>.
-        </p>
-      </Section>
-
-      <Section id="sample" label="Mail designs" title="What lands in your inbox">
-        <p className="sample-caption">
-          The <strong>{sampleDesign.name}</strong> design, one of{" "}
-          {TEMPLATE_LIST.length}, rendered from the request above. Nested values and
-          longer messages are laid out for you; every field you declared appears in the
-          order you declared it, even the ones left blank.
-        </p>
-        <div className="sample-mail">
-          <iframe
-            title={`Sample email in the ${sampleDesign.name} design`}
-            srcDoc={sampleHtml}
-            // Per-design height (lib/templates.ts): under sandbox="" the frame cannot
-            // measure or report its own content height.
-            style={{ height: `${sampleDesign.previewHeight}px` }}
-            sandbox=""
-            loading="lazy"
-          />
-        </div>
-      </Section>
-
       <Section id="features" label="Features" title="What you get">
         <div className="feature-grid">
           {FEATURES.map((f) => (
@@ -337,40 +232,6 @@ export default async function Home() {
         </div>
       </Section>
 
-      <Section id="dashboard" label="Dashboard" title="Every site in one dashboard">
-        <p className="sample-caption">
-          Each app keeps its own destination, field list and design. This is how one
-          looks once its address is confirmed — the real row also carries buttons to edit
-          the fields, switch design and rotate the key.
-        </p>
-        {/* Deliberately the dashboard's own .app-item markup and classes rather than a
-            screenshot: a picture goes stale silently, this restyles with the real UI.
-            Interactive controls are left out instead of rendered as dead buttons. */}
-        <div className="dash-preview" aria-label="Example of a registered app">
-          <div className="app-item">
-            <div className="app-item-head">
-              <div>
-                <h3>Acme contact form</h3>
-                <p>
-                  → support@acme.com <span className="status-ok">confirmed</span>
-                </p>
-                <p>Design: {sampleDesign.name}</p>
-                <p>
-                  Fields:{" "}
-                  {DEFAULT_FIELDS.map((f, i) => (
-                    <span key={f.name}>
-                      {i > 0 && ", "}
-                      <code>{f.name}</code>
-                      {f.required && <abbr title="required">*</abbr>}
-                    </span>
-                  ))}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Section>
-
       <Section id="not-for" label="Scope" title="What it isn’t">
         <ul className="limits-list">
           {NOT_FOR.map((item) => (
@@ -379,30 +240,21 @@ export default async function Home() {
         </ul>
       </Section>
 
-      <Section id="faq" label="FAQ" title="Questions">
-        <dl className="faq-list">
-          {FAQ.map((item) => (
-            <div key={item.q}>
-              <dt>{item.q}</dt>
-              <dd>{item.a}</dd>
-            </div>
-          ))}
-        </dl>
-      </Section>
-
       <section className="landing-cta">
         <h2>Ready to wire up your form?</h2>
         <p>
           Register an app, copy its key, and post your first submission in a couple of
-          minutes.
+          minutes. The <Link href="/docs">API docs</Link> carry the full reference, and{" "}
+          <Link href="/contact">contact</Link> has the answers to the questions people
+          ask first.
         </p>
         <div className="hero-actions">
           <Link className="btn-primary" href="/register">
             Get started
           </Link>
-          <a className="btn-secondary" href={`mailto:${CONTACT_EMAIL}`}>
+          <Link className="btn-secondary" href="/contact">
             Ask a question
-          </a>
+          </Link>
         </div>
       </section>
     </div>

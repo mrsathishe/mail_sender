@@ -5,8 +5,11 @@ import { User } from "@/models/User";
 import { getSession } from "@/lib/auth";
 import { VerifyEmailForm } from "./VerifyEmailForm";
 import { SessionRefresh } from "./SessionRefresh";
+import { privateMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = privateMetadata("Verify your email");
 
 // Not in the middleware matcher on purpose — an unverified account is redirected
 // *here*, so gating it would loop.

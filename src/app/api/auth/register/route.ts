@@ -10,7 +10,7 @@ import { issueAccountOtp } from "@/lib/verification-mail";
 export const runtime = "nodejs";
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 

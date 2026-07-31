@@ -4,8 +4,11 @@ import { User } from "@/models/User";
 import { App } from "@/models/App";
 import { SendLog } from "@/models/SendLog";
 import { PageHeader } from "@/components/PageHeader";
+import { privateMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = privateMetadata("Admin");
 
 export default async function AdminOverviewPage() {
   await connectDB();

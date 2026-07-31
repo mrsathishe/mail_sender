@@ -12,11 +12,10 @@ the fields that app declared, renders them with the app's chosen **mail design**
 and emails it — from **our own** sending account — to the **destination address**
 you configured when you registered the app.
 
-> This is **Step 1 (Basic)**. See [docs/SPEC.md](docs/SPEC.md) for the full,
-> authoritative scope and what is deliberately left out (file handling details,
-> rate limiting, OAuth login). Selectable mail designs and provider-agnostic
-> destinations are specified in
-> [docs/MAIL_TEMPLATES_SPEC.md](docs/MAIL_TEMPLATES_SPEC.md).
+> This is **Step 1 (Basic)**. This README and [CLAUDE.md](CLAUDE.md) are the
+> authoritative description of what the service does — including the selectable mail
+> designs and provider-agnostic destinations — and what is deliberately left out
+> (file handling, OAuth login, a platform-wide send budget).
 
 ## How it works
 
@@ -39,7 +38,7 @@ Mailer API
   3. send email via our SMTP account  ──► configured destination address
         │
         ▼
-202 Accepted
+200 OK
 ```
 
 The dashboard (register / login / register-app) and the REST API run in the same
@@ -156,6 +155,14 @@ Content-Type: application/json
 { "name": "Jane", "message": "Hello there", "phone": "12345" }
 ```
 
+To attach files, post `multipart/form-data` to **`/v1/sendWithAttachment`** instead —
+same key, same fields, same responses, with the whole request capped at 5MB rather than
+500KB. Switch attachments on for the app first (dashboard → **Attachments**), or a file
+part is refused with `422 attachments_not_enabled`. Accepted types are checked by their
+*contents*, not their name. The dashboard's **Get the code** button on each app row
+generates the form, the forwarding route and a cURL example from that app's own fields
+and settings, so the snippet always matches the contract the endpoint enforces.
+
 Each declared field becomes one row of the HTML email, with a `Key: value`
 plain-text alternative:
 
@@ -180,7 +187,7 @@ can't spend the shared sending allowance every other app depends on. Over it,
 submissions are refused with `429 daily_limit_exceeded` — nothing is dropped
 silently. It's a setting (`SEND_APP_DAILY_LIMIT`), so it can be raised per
 deployment. An identical submission from the same app within **60 seconds** is
-treated as the request you already made: `202` with `duplicate: true` and no second
+treated as the request you already made: `200` with `duplicate: true` and no second
 email, so a double-clicked submit button is harmless. A failed send doesn't count as
 a duplicate, so retrying after a `502` does deliver.
 
@@ -223,16 +230,17 @@ days, and the auto-reply is labelled separately from the submission.
 
 | Status | Meaning |
 |---|---|
-| `202` | Accepted — email sent to the configured address. |
-| `202` | `duplicate: true` — identical submission within 60s; no second email sent. |
+| `200` | Email sent to the configured address. |
+| `200` | `duplicate: true` — identical submission within 60s; no second email sent. |
 | `400` | Bad request (missing/invalid body). |
 | `400` | `unknown_field` / `missing_field` — the submission broke the app's field list. |
 | `400` | `body_too_deep` — the body nests more than 5 levels. |
 | `401` | Secret key missing or invalid. |
 | `403` | `destination_unverified` — the destination hasn't confirmed its address. |
-| `413` | `payload_too_large` — the request body exceeded 500KB. |
+| `413` | `payload_too_large` — the request body exceeded 500KB, or 5MB on `/v1/sendWithAttachment`. |
 | `422` | `honeypot_filled` / `too_fast` / `timing_missing` — a bot signal fired. |
 | `422` | `spam_rejected` — the content scored past the spam threshold. |
+| `422` | `attachments_not_enabled` / `too_many_files` / `unsupported_file_type` / `empty_file` / `invalid_filename` — an attachment was refused. |
 | `429` | `daily_limit_exceeded` — the app used its 500 sends for the day. |
 | `502` | Mail send failed. |
 
@@ -245,6 +253,10 @@ Codes last 15 minutes and allow 5 attempts; the dashboard can send a fresh one.
 
 Forgot your password? Use the **"Forgot password?"** link on the login page — a
 single-use, time-limited reset link is emailed via the same mailer.
+
+**Need help?** `/contact` carries the email address, phone number and a **help form**,
+plus the FAQ. The form is public, so it runs the same guards `/v1/send` does — a
+honeypot, a minimum fill time, content scoring, and one message per client per minute.
 
 ## Deployment
 
@@ -274,6 +286,13 @@ sudo certbot --nginx -d mail.satz.co.in    # edit the domain in nginx.conf first
 Later updates: `git pull && npm run deploy` (installs deps, rebuilds, restarts the
 service). Check status/logs with `sudo systemctl status mail-sender` and
 `journalctl -u mail-sender -f`.
+
+> **File uploads need the nginx config recopied.** `client_max_body_size` is
+> per-location: the server default stays at `1m`, and `deploy/nginx.conf` raises it to
+> `6m` only on `/api/v1/sendWithAttachment` and `/api/contact`. An older copy of the
+> file rejects every upload with an nginx `413` before the app ever sees it, so redo
+> the two `cp` / `nginx -t` steps above on an existing VPS. No database migration is
+> needed — `attachments` defaults to off on every app.
 
 #### One-off migration (mail designs release)
 
@@ -336,7 +355,7 @@ git pull && npm run deploy
 
 #### Starting over on an empty database
 
-Wipes the five collections in [docs/SPEC.md](docs/SPEC.md) §7 and nothing else, so it
+Wipes the five collections this service owns and nothing else, so it
 is safe against a database shared with other apps. **Every account, app and secret key
 is destroyed** — any website still posting to `/v1/send` gets `401 invalid_key` until
 its owner registers again. Both flags are required, and the database name must match
@@ -381,15 +400,18 @@ src/
                        confirm/resend destination, per-app activity
       templates/       design previews for the dashboard picker
       v1/send/         the public send endpoint (Node runtime)
+      v1/sendWithAttachment/  the same pipeline, with file uploads up to 5MB
+      contact/         our own help form (internal, unauthenticated, guarded)
       health/          health check
     page.tsx           public landing page (signed-in visitors → /dashboard)
+    contact/           contact details, help form, FAQ
     dashboard/         apps manager UI
     login/ register/ forgot-password/ reset-password/ verify-email/
     robots.ts sitemap.ts manifest.ts opengraph-image.tsx apple-icon.tsx icon.svg
   components/          site shell — header, mobile nav, footer, logo, page header
   lib/                 auth, db, jwt, mailer, password, secret, env, flatten,
                        templates, fields, bot-guard, spam-score, auto-responder,
-                       api-docs, base-url, brand, otp, verification-mail
+                       api-docs, base-url, brand, seo, otp, verification-mail
   models/              User, App, SendLog, DailyUsage, SendDedupe (Mongoose)
   middleware.ts        session + email-verification gating
 public/                logo-lockup.png (hero/OG), logo-mark.png (header), icon-512.png
@@ -397,6 +419,5 @@ deploy/                VPS deploy — nginx.conf, setup.sh, deploy.sh, systemd u
 scripts/               one-off data migrations + reset-db.mjs (destructive wipe)
 k8s/                   Kubernetes manifests
 Dockerfile             production image
-docs/SPEC.md           source-of-truth spec (Step 1)
-docs/MAIL_TEMPLATES_SPEC.md  mail designs + any-provider destinations
+docs/                  VPS deploy playbook
 ```

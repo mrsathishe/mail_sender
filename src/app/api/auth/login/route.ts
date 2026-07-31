@@ -6,7 +6,7 @@ import { verifyPassword } from "@/lib/password";
 import { createSession } from "@/lib/auth";
 
 const schema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(1),
 });
 

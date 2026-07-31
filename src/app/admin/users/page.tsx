@@ -1,10 +1,11 @@
 import { getSession } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { UsersManager } from "./UsersManager";
+import { privateMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Users" };
+export const metadata = privateMetadata("Users");
 
 export default async function AdminUsersPage() {
   const session = await getSession();

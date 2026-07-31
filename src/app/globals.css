@@ -529,7 +529,7 @@ button:disabled {
   color: var(--accent);
 }
 
-/* Nine blocks stacked with margin alone read as one wall of text — a rule plus
+/* Sections stacked with margin alone read as one wall of text — a rule plus
    generous padding is what makes the page skimmable by section. */
 .landing-section {
   padding: 3rem 0;
@@ -564,39 +564,11 @@ button:disabled {
   margin: 1rem 0 0;
 }
 
-.step-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 1rem;
-}
-.step-list li {
-  display: flex;
-  gap: 1rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.25rem;
-}
-.step-number {
-  flex: 0 0 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--btn-bg);
-  color: var(--btn-text);
-  font-weight: 700;
-}
-.step-list h3,
 .feature-card h3 {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
   color: var(--text);
 }
-.step-list p,
 .feature-card p {
   margin: 0;
   color: var(--muted);
@@ -662,33 +634,6 @@ button:disabled {
   font-size: 0.8rem;
 }
 
-/* Scoped to beat `.landing-section > p`, which is the more specific selector. */
-.landing-section > .sample-caption {
-  margin: -0.5rem 0 1.25rem;
-  color: var(--muted);
-}
-.sample-mail,
-.dash-preview {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.sample-mail iframe {
-  display: block;
-  width: 100%;
-  border: 0;
-  /* Mail designs carry their own fixed palettes, so the frame never follows the
-     site's dark mode — give it the light backdrop a mail client would. */
-  background: var(--white);
-}
-.dash-preview {
-  background: var(--surface-2);
-  padding: 1rem;
-}
-.dash-preview .app-item {
-  margin-bottom: 0;
-}
-
 .limits-list {
   margin: 0;
   padding-left: 1.1rem;
@@ -731,6 +676,55 @@ button:disabled {
   margin: 0 auto 1.5rem;
   max-width: 34rem;
   color: var(--muted);
+}
+
+/* ── Contact page ────────────────────────────────────────────────────────── */
+/* Details beside the form on a wide screen, stacked below — the details are the
+   fallback for anyone who would rather use their own mail client, so they lead. */
+.contact-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .contact-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.contact-details dl {
+  margin: 0;
+}
+.contact-details dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 1rem;
+}
+.contact-details dt:first-child {
+  margin-top: 0;
+}
+.contact-details dd {
+  margin: 0.2rem 0 0;
+}
+.contact-details .muted {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+}
+/* The form's last input already carries 1rem of bottom margin. */
+.contact-form textarea {
+  margin-bottom: 0.5rem;
+}
+/* Honeypot: off the screen rather than `display:none`, which some bots skip, and
+   `aria-hidden` in the markup keeps it out of the accessibility tree. */
+.honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }
 
 /* ── Dashboard ───────────────────────────────────────────────────────────── */
@@ -1293,6 +1287,16 @@ button:disabled {
 .code-block .copy-btn:hover {
   background: rgba(255, 255, 255, 0.3);
 }
+/* Generated integration code in a dashboard app row. Reuses .code-block, so the
+   snippets look the same here as in the public docs. */
+.snippet {
+  margin-top: 1rem;
+}
+.snippet h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
 .doc-table {
   width: 100%;
   border-collapse: collapse;
@@ -1442,9 +1446,6 @@ button:disabled {
     flex: 1 1 auto;
   }
 
-  .step-list li {
-    padding: 1rem;
-  }
   .hero {
     padding: 1.5rem 0 2rem;
   }

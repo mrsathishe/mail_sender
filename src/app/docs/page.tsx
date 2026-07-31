@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { marked } from "marked";
 import { PageHeader } from "@/components/PageHeader";
-import { CodeBlock } from "./CodeBlock";
+import { CodeBlock } from "@/components/CodeBlock";
 import { TrySend } from "./TrySend";
 import { baseUrlFrom } from "@/lib/base-url";
 import { docSections, DOCS_TITLE, DOCS_TAGLINE, type DocBlock } from "@/lib/api-docs";
@@ -102,7 +102,10 @@ export default async function DocsPage() {
               Paste one of your app&rsquo;s secret keys and a JSON payload, then send a
               real test email to that app&rsquo;s destination address.
             </p>
-            <TrySend endpoint={`${base}/api/v1/send`} />
+            <TrySend
+              endpoint={`${base}/api/v1/send`}
+              attachmentEndpoint={`${base}/api/v1/sendWithAttachment`}
+            />
           </>
         ) : (
           <p>

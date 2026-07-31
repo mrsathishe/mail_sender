@@ -11,6 +11,8 @@ export function SiteFooter() {
         <p className="site-footer-links">
           <Link href="/docs">API docs</Link>
           <span aria-hidden="true">·</span>
+          <Link href="/contact">Contact</Link>
+          <span aria-hidden="true">·</span>
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </p>
       </div>

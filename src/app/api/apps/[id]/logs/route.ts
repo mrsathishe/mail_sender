@@ -49,7 +49,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     peekDailySend(id),
   ]);
 
-  const counts = { sent: 0, smtp_failed: 0, blocked_bot: 0, blocked_spam: 0 };
+  const counts = {
+    sent: 0,
+    smtp_failed: 0,
+    blocked_bot: 0,
+    blocked_spam: 0,
+    blocked_attachment: 0,
+  };
   for (const row of byStatus) {
     if (row._id in counts) counts[row._id as keyof typeof counts] = row.count;
   }

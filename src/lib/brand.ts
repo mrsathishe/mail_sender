@@ -11,6 +11,16 @@ export const BRAND_TAGLINE =
   "Send website form submissions to any email inbox with a single authenticated HTTP request.";
 
 export const CONTACT_EMAIL = "contact@satz.co.in";
+export const CONTACT_PHONE = "+91 9790060943";
+/** `tel:` takes digits and one leading `+` — spaces stop some clients dialling. */
+export const CONTACT_PHONE_HREF = "+919790060943";
+export const CONTACT_LOCATION = "Chennai, Tamil Nadu, India";
+/** The same place, in the parts `PostalAddress` structured data needs separately. */
+export const CONTACT_ADDRESS = {
+  locality: "Chennai",
+  region: "Tamil Nadu",
+  country: "IN",
+} as const;
 
 /** Palette echoed by the generated images, which cannot read the site CSS. */
 export const BRAND_COLORS = {

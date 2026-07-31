@@ -1,6 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import {
+  ACCEPT_ATTRIBUTE,
+  ATTACHMENT_MAX_TOTAL_BYTES,
+  formatBytes,
+} from "@/lib/attachments";
 
 const DEFAULT_BODY = `{
   "name": "Jane Doe",
@@ -12,11 +17,22 @@ type Result = { status: number; body: string; ok: boolean } | { error: string } 
 
 // Live tester: paste an app's secret key + a JSON payload and actually call
 // POST /api/v1/send. This sends a REAL email to that app's destination inbox.
-export function TrySend({ endpoint }: { endpoint: string }) {
+//
+// Attaching a file switches it to the multipart endpoint, because that is the only way
+// to exercise uploads without a terminal — the JSON fields become form parts, which is
+// exactly the shape a customer's own route would forward.
+export function TrySend({
+  endpoint,
+  attachmentEndpoint,
+}: {
+  endpoint: string;
+  attachmentEndpoint: string;
+}) {
   const [secret, setSecret] = useState("");
   const [body, setBody] = useState(DEFAULT_BODY);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<Result>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   async function send() {
     setResult(null);
@@ -26,22 +42,49 @@ export function TrySend({ endpoint }: { endpoint: string }) {
       return;
     }
     // Validate the JSON locally so we show a clear error instead of a 400.
+    let parsed: Record<string, unknown>;
     try {
-      JSON.parse(body);
+      parsed = JSON.parse(body);
     } catch {
       setResult({ error: "Request body is not valid JSON." });
       return;
     }
 
+    const files = Array.from(fileInput.current?.files ?? []);
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+    if (total > ATTACHMENT_MAX_TOTAL_BYTES) {
+      setResult({
+        error: `Those files come to ${formatBytes(total)} — the limit is ${formatBytes(
+          ATTACHMENT_MAX_TOTAL_BYTES
+        )}.`,
+      });
+      return;
+    }
+
     setSending(true);
     try {
-      const res = await fetch(endpoint, {
+      // With files this has to be multipart, and the browser must set Content-Type
+      // itself so the boundary matches the body it built.
+      let request: { url: string; headers: Record<string, string>; body: BodyInit };
+      if (files.length > 0) {
+        const form = new FormData();
+        for (const [key, value] of Object.entries(parsed)) {
+          form.append(key, typeof value === "string" ? value : JSON.stringify(value));
+        }
+        for (const file of files) form.append("files", file);
+        request = { url: attachmentEndpoint, headers: {}, body: form };
+      } else {
+        request = {
+          url: endpoint,
+          headers: { "Content-Type": "application/json" },
+          body,
+        };
+      }
+
+      const res = await fetch(request.url, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${secret.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body,
+        headers: { Authorization: `Bearer ${secret.trim()}`, ...request.headers },
+        body: request.body,
       });
       const text = await res.text();
       let pretty = text;
@@ -77,6 +120,22 @@ export function TrySend({ endpoint }: { endpoint: string }) {
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
+
+      <label htmlFor="try-files">Attachments (optional)</label>
+      <input
+        id="try-files"
+        ref={fileInput}
+        type="file"
+        multiple
+        accept={ACCEPT_ATTRIBUTE}
+        aria-describedby="try-files-help"
+      />
+      <p className="muted field-help" id="try-files-help">
+        Attach a file and the request goes to <code>/api/v1/sendWithAttachment</code> as{" "}
+        <code>multipart/form-data</code> instead, with the fields above as form parts. The
+        app needs attachments switched on, or the answer is{" "}
+        <code>422 attachments_not_enabled</code>.
+      </p>
 
       <button type="button" className="send-btn" onClick={send} disabled={sending}>
         {sending ? "Sending…" : "Send test email"}

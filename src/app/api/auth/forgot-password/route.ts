@@ -9,7 +9,7 @@ import { BRAND_FULL } from "@/lib/brand";
 
 export const runtime = "nodejs";
 
-const schema = z.object({ email: z.string().email() });
+const schema = z.object({ email: z.email() });
 const RESET_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function POST(req: Request) {

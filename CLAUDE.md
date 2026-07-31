@@ -13,18 +13,17 @@ The product is branded **Mailer by satz**; every user-visible name, tagline and
 contact address comes from [src/lib/brand.ts](src/lib/brand.ts), so the header,
 footer, mail footer, OTP subjects and OG card cannot drift.
 
-`docs/` is the source of truth for scope and behaviour, and is expected to be kept
-in sync with code changes:
+`docs/` now holds only the deployment playbook — this file plus
+[README.md](README.md) are the behaviour documentation, and are expected to be kept in
+sync with code changes:
 
-- [docs/SPEC.md](docs/SPEC.md) — the core service (step 1)
-- [docs/ADMIN_SPEC.md](docs/ADMIN_SPEC.md) — admin area
-- [docs/MAIL_TEMPLATES_SPEC.md](docs/MAIL_TEMPLATES_SPEC.md) — the 5 mail designs + provider-agnostic destinations
-- [docs/HARDENING_ROADMAP.md](docs/HARDENING_ROADMAP.md) — **open work only**: the
-  remaining pre-launch gap (volume guard), the sending-model and key decisions, and
-  planned features. Shipped items are one-line entries in its §7; don't re-document
-  them there
 - [docs/VPS_PROJECT_PLAYBOOK.md](docs/VPS_PROJECT_PLAYBOOK.md) — nginx/systemd VPS pattern
 - `old/` holds superseded design docs — do not treat them as current
+
+`SPEC.md`, `ADMIN_SPEC.md`, `MAIL_TEMPLATES_SPEC.md` and `HARDENING_ROADMAP.md` were
+deleted as no longer needed. Code comments still cite `SPEC §4b` /
+`HARDENING_ROADMAP §1.2` as rationale markers for a decision; read those as history
+rather than as live documents, and don't recreate a file to satisfy a citation.
 
 ## Commands
 
@@ -87,22 +86,32 @@ deterministic lookup by hash); [src/lib/password.ts](src/lib/password.ts) uses
 bcrypt for passwords. Secret keys are shown once at creation/rotation and only
 their hash is stored.
 
-**The send pipeline** ([src/app/api/v1/send/route.ts](src/app/api/v1/send/route.ts)):
+**The send pipeline** ([src/lib/send-endpoint.ts](src/lib/send-endpoint.ts)):
 bearer key → `hashSecret` lookup of the `App` → owner-disabled check →
 destination-verified check → `readLimitedBody()` (JSON or form) → **guard-field split
 + bot signals** (`splitGuardFields()` / `checkBotSignals()`) → **field-contract
 check** (`validateSubmission()` / `orderSubmission()`) → **content score**
-(`checkSubmissionContent()`) → **duplicate claim** → **daily-quota consume** →
-`buildEmailBody()`
+(`checkSubmissionContent()`) → **attachment check** (`checkAttachments()`) →
+**duplicate claim** → **daily-quota consume** → `buildEmailBody()`
 (plain text) + `renderEmailHtml()` (HTML) + `findReplyTo()` → `sendMail()` →
 `SendLog` row on both success and failure (logging is wrapped so it can never affect
-the response) → **autoresponse** (§4e, after the `202` is earned). `From:` is always
+the response) → **autoresponse** (§4e, after the `200` is earned). `From:` is always
 our own address and the submitter goes in
 `Reply-To:` — the reverse is spoofing and fails DMARC. On failure the Nodemailer
 `code` / `responseCode` / `response` are captured into `SendLog.error`, because
-"sendMail threw" cannot be diagnosed. This route **must** stay
+"sendMail threw" cannot be diagnosed. The routes **must** stay
 `export const runtime = "nodejs"` — Nodemailer opens an SMTP socket, which Edge
 cannot do.
+
+That pipeline is a **library, not a route**, because two routes run it:
+[/api/v1/send](src/app/api/v1/send/route.ts) and
+[/api/v1/sendWithAttachment](src/app/api/v1/sendWithAttachment/route.ts) are ~8-line
+shells calling `handleSend(req, { attachments })`. They differ in exactly three places,
+all marked `opts.attachments`: the byte cap, the attachment step, and what is handed to
+`sendMail`. A second copy would drift, and drift in *this* order (guards before quota,
+dedupe before quota, body read after auth) is a security bug rather than a cosmetic one.
+Two paths rather than one flag because nginx's `client_max_body_size` is **per-location**
+— the 500KB endpoint keeps a 1m guard at the edge while only the upload path is raised.
 
 **Spam defence is two libraries with opposite failure modes** (SPEC §4d).
 [bot-guard.ts](src/lib/bot-guard.ts) owns the per-app honeypot and minimum fill time:
@@ -124,7 +133,7 @@ gone quiet is otherwise unexplainable.
 recipient comes only from `findReplyTo()` on the submission (a caller can never name
 one), the text is the **owner's** so a leaked key picks the recipient but never the
 words, it consumes its **own** quota slot and is the half dropped when the day runs out,
-and it runs after the `202` so its failure can't change the caller's result. Blank
+and it runs after the `200` so its failure can't change the caller's result. Blank
 subject/message mean "use the built-in wording" rather than storing a copy of it, so
 improving the wording reaches every app that never customised it. It renders through
 `renderAutoReplyHtml()`, which reads each design's extracted `palette` — one shared
@@ -158,8 +167,8 @@ quota slot stays spent. The public docs read `env.appDailySendLimit`, so the doc
 number cannot drift from the enforced one. An autoresponse takes a **second** slot of
 its own (`consumeDailySend` again), so a submission with the reply enabled costs two.
 
-**The request body is bounded by one number.** [src/lib/body-limit.ts](src/lib/body-limit.ts)
-caps the *total* at `MAX_BODY_BYTES` (500KB) and nothing else — a per-field cap was
+**The request body is bounded by one number per endpoint.** [src/lib/body-limit.ts](src/lib/body-limit.ts)
+caps the *total* at `MAX_BODY_BYTES` (500KB) by default and nothing else — a per-field cap was
 rejected because N fields at the maximum multiply, so the total is the only real
 bound (HARDENING_ROADMAP §1.3). Bytes are counted as they arrive and the stream is
 cancelled on overflow; `content-length` is only an early hint, since a client can lie
@@ -169,8 +178,38 @@ input far deeper than `flatten.ts`'s recursion survives, so without it a 10KB bo
 5000 nested arrays returns a 500 instead of a `400`. Never swap
 `readLimitedBody()` back to `req.json()`/`req.formData()` — both buffer without a
 limit, which is also why the multipart branch re-wraps already-counted bytes.
-`deploy/nginx.conf` keeps `client_max_body_size` just above the app's cap; raise both
-together or neither takes effect.
+The cap is an **argument** (`maxBytes`) rather than a constant so the upload endpoint can
+raise it to 5MB without a second reader; `keepFiles` likewise decides whether file parts
+are returned or dropped, and defaults to dropping so nothing that already calls it
+changed. `deploy/nginx.conf` keeps `client_max_body_size` just above each cap —
+1m server-wide, 6m on the two upload locations; raise the pair together or neither takes
+effect. The `proxy_set_header` lines live in the `server` block on purpose: setting *any*
+of them inside a `location` replaces the whole inherited set, which would silently drop
+the forwarded headers middleware depends on.
+
+**Attachments are checked extension-first, then confirmed by the bytes**
+([src/lib/attachments.ts](src/lib/attachments.ts)). The declared extension selects a rule
+and the leading bytes have to satisfy it — the reverse order (sniff, then trust) cannot
+tell `.docx` from `.xlsx` (identical zip magic) or judge `.txt` at all (no magic exists),
+while this order still refuses a `.zip` renamed `.pdf`. The `contentType` given to
+Nodemailer is the **rule's**, never the client's part header. Archives, `.svg` and legacy
+`.doc`/`.xls` are refused for reasons written at the type table, not by oversight.
+`safeFilename()` is not cosmetic: the name lands in a MIME header and then on the
+recipient's disk, so a path or a CR/LF in it is header injection. It is **opt-in per app**
+(`attachments.enabled`, default off) and the raised cap is applied only for such an app —
+which is why the `App` is loaded *before* the body is read. A refused file writes a
+`blocked_attachment` row and costs no quota; an accepted one still costs a single send.
+The autoresponse deliberately carries none of them back. This module stays free of Node
+built-ins so the dashboard's client editor can read its constants, like `bot-guard.ts`.
+
+**Integration code is generated per app, not documented once**
+([src/lib/snippets.ts](src/lib/snippets.ts), rendered by the "Get the code" button on each
+dashboard row). A generic `name`/`email`/`message` example is correct only until an owner
+renames a field, after which it produces `400 unknown_field` and reads like our bug — so
+the form markup, the forwarding route, and the cURL/fetch samples are all built from that
+app's real `fields`, `spamGuard` names and `attachments` setting, including which of the
+two endpoints it should post to. It reuses `titleize()` from `flatten.ts` for labels, so a
+field reads the same in the form and in the email.
 
 **Two things are verified by emailed OTP, with one helper.**
 [src/lib/otp.ts](src/lib/otp.ts) owns code generation and checking (8 chars from a
@@ -229,7 +268,7 @@ when a value is read at request time, so a missing var never breaks the build.
 Mongoose connections are cached on `global` ([src/lib/db.ts](src/lib/db.ts)) to
 survive dev hot-reloads; every route calls `connectDB()` itself.
 
-**One shell for every page, and `/` is a real landing page** (SPEC §5b).
+**One shell for every page, and two public pages** (SPEC §5b).
 [layout.tsx](src/app/layout.tsx) renders `SiteHeader` → `<main id="main">` →
 `SiteFooter` plus a skip link, so the nav exists once instead of in each area's own
 `.topbar`; pages contribute only a [PageHeader](src/components/PageHeader.tsx). The
@@ -237,14 +276,30 @@ header reads the session, which is what makes every route render dynamically —
 effectively already did behind `next start`. `/` is a public marketing page (it
 redirects signed-in visitors to `/dashboard`) because with the dashboard behind a
 login wall there was nothing for a crawler to index; its JSON-LD must keep mirroring
-the visible copy. It shows a **real rendered sample email** via `renderPreviewHtml()`
-as an iframe `srcDoc` — the same function `/api/templates/[id]/preview` uses, because
-that route needs a session — and an **example dashboard row built from the real
-`.app-item` markup** rather than a screenshot, which would go stale silently. Customer
-logos go in `public/logos/` rather than hotlinked from the customer's own site, whose
-asset paths carry build hashes. Titles come from the `%s · Mailer by satz` template, and
-authed pages also set `robots: { index: false }` so the crawl policy doesn't rest on
-`robots.txt` alone.
+the visible copy. It is deliberately short — hero, live-on, audience, features, what it
+isn't, CTA — because the how-it-works steps, the `curl` block, the sample email and the
+example dashboard row each restated something `/docs` or the dashboard already owns.
+Customer logos go in `public/logos/` rather than hotlinked from the customer's own site,
+whose asset paths carry build hashes.
+
+[`/contact`](src/app/contact/page.tsx) is the other public page: contact details, a
+help form, and the **FAQ that used to sit on `/`** — moved there with its `FAQPage`
+JSON-LD, since that data has to mirror the page it is on. Its form posts to
+[`/api/contact`](src/app/api/contact/route.ts), which is internal (never added to
+`api-docs.ts`) and is the one unauthenticated route that mails on a stranger's request,
+so it reuses the send pipeline's guards in the same order — body cap, honeypot + fill
+time, strict `zod` contract, content score, then two 60s `claimSubmission()` claims
+(one per client IP → `429`, one per body → `200 { duplicate: true }`). A send failure
+releases **both**, so a retry is neither blocked nor swallowed. It writes no `SendLog`
+row: that collection is one row per *app* send and has no `appId`/`userId` to use here.
+
+Titles come from the `%s · Mailer by satz` template; the three public pages set a
+description, canonical and Open Graph block, and every authed or auth-flow page gets
+`robots: { index: false, follow: false }` from `privateMetadata()` in
+[seo.ts](src/lib/seo.ts) — one helper, because `robots.txt` only asks a crawler not to
+fetch and cannot keep a linked-to page out of an index. The four `"use client"` auth
+pages carry that metadata in a route `layout.tsx`, which is the only place a client
+page can.
 
 **Logo assets, and the one trap in them** ([public/](public/)). The logo is the
 designer's raster artwork and nothing else: `logo-mark.png` (512×313) is what the
@@ -273,8 +328,12 @@ and one shared height clipped the taller designs.
 **Client/server split in the dashboard.** Server pages read the session and pass
 data down; e.g. [src/app/dashboard/page.tsx](src/app/dashboard/page.tsx) imports
 `TEMPLATE_LIST` and passes it to the client `AppsManager`, so design markup and
-render functions never reach the browser bundle. Import via the `@/*` → `src/*`
-alias.
+render functions never reach the browser bundle. It also passes `baseUrl` from
+`baseUrlFrom(await headers())`, because the generated snippets are meant to be pasted
+into somebody else's project and so need an absolute URL — the same forwarded-header
+reason as middleware. [CodeBlock](src/components/CodeBlock.tsx) sits in `components/`
+rather than under `docs/` now that both the public docs and the dashboard render it.
+Import via the `@/*` → `src/*` alias.
 
 **Password reset** ([forgot-password](src/app/api/auth/forgot-password/route.ts) →
 [reset-password](src/app/api/auth/reset-password/route.ts)): a random token is
@@ -294,12 +353,14 @@ always returns the same response whether or not the email exists.
   (design enum, default `card`), `fields` (`[{ name, required }]`, default
   name/email/phone/message), `spamGuard` (`{ honeypotField, timingField,
   minSubmitSeconds }`, all off), `autoResponder` (`{ enabled, subject, message }`,
-  off), `secretKeyHash`. The last two default to "off", which is why they need no
+  off), `attachments` (`{ enabled, maxFiles }`, off), `secretKeyHash`. The last three
+  default to "off", which is why they need no
   migration; they are edited per app **after** registration, so registering one stays
   a short form.
 - **SendLog** — one row per `/v1/send` attempt, with `websiteName`/`destinationEmail`
   snapshotted at send time, `kind: "submission" | "autoresponse"` and
-  `status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam"`; `error` holds the
+  `status: "sent" | "smtp_failed" | "blocked_bot" | "blocked_spam" | "blocked_attachment"`;
+  `error` holds the
   reason for any non-`sent` row (the provider's SMTP reply, or which guard fired).
   Rows expire after
   `SEND_LOG_TTL_DAYS` (90) via a TTL index on `createdAt`, which is *ascending* so it
@@ -329,7 +390,8 @@ them. Secrets are always injected at runtime, never baked in.
 ## Conventions worth matching
 
 - Errors are machine-readable codes, not prose: `{ error: "invalid_key" }` with
-  401/400/404/502. `/v1/send` returns `202` on success.
+  401/400/404/502. `/v1/send` returns `200` on success (it awaits the provider before
+  answering, so the mail really has gone out by then).
 - Public API responses never leak internals; user-scoped routes filter by
   `userId: session.userId` so ownership is enforced in the query itself, and guard
   ids with `isValidObjectId` before querying (a malformed id would otherwise throw

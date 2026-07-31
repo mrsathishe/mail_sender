@@ -12,6 +12,12 @@
 
 import { BRAND_FULL, BRAND_TAGLINE, CONTACT_EMAIL } from "./brand";
 import { DEFAULT_FIELDS, MAX_FIELDS } from "./fields";
+import {
+  ACCEPTED_EXTENSIONS,
+  ATTACHMENT_MAX_TOTAL_BYTES,
+  MAX_ATTACHMENTS_CEILING,
+  formatBytes,
+} from "./attachments";
 import { env } from "./env";
 
 export type DocBlock =
@@ -25,8 +31,29 @@ export type DocSection = { id: string; heading: string; blocks: DocBlock[] };
 export const DOCS_TITLE = `${BRAND_FULL} — API documentation`;
 export const DOCS_TAGLINE = BRAND_TAGLINE;
 
+// Plain-English names for the accepted upload types, so the table in the docs reads as
+// something to choose from rather than a list of MIME strings.
+const EXTENSION_NAMES: Record<string, string> = {
+  png: "Image",
+  jpg: "Image",
+  jpeg: "Image",
+  gif: "Image",
+  webp: "Image",
+  pdf: "PDF document",
+  txt: "Plain text",
+  csv: "Spreadsheet data",
+  docx: "Word document",
+  xlsx: "Excel workbook",
+  pptx: "PowerPoint presentation",
+};
+
+function describeExtension(extension: string): string {
+  return EXTENSION_NAMES[extension] ?? extension.toUpperCase();
+}
+
 export function docSections(base: string): DocSection[] {
   const endpoint = `${base}/api/v1/send`;
+  const attachmentEndpoint = `${base}/api/v1/sendWithAttachment`;
 
   return [
     {
@@ -40,7 +67,11 @@ export function docSections(base: string): DocSection[] {
             `Outlook or your own domain — with a single HTTP request. First register an ` +
             `app on the [dashboard](${base}/dashboard) to get a **secret key**, set the ` +
             `destination address, declare the fields your form sends, and pick a mail ` +
-            `design. Then call the endpoint below with that key.`,
+            `design. Then call the endpoint below with that key.\n\n` +
+            `Every app row on the dashboard has a **Get the code** button, which writes ` +
+            `the form, the forwarding route and a cURL example out of *that app's* own ` +
+            `fields and settings — quicker than adapting the generic examples here, and ` +
+            `it cannot disagree with the field list the endpoint will check.`,
         },
         { kind: "endpoint", method: "POST", url: endpoint },
       ],
@@ -114,8 +145,8 @@ export function docSections(base: string): DocSection[] {
             "**Limits.** The whole request body must stay under **500KB** — larger " +
             "posts are refused with `413` before being read. There is no separate " +
             "per-field limit, so a single long message field may use that budget. " +
-            "Nesting deeper than 5 levels is rejected with `400 body_too_deep`. File " +
-            "uploads are not supported yet: file parts in a form post are ignored. " +
+            "Nesting deeper than 5 levels is rejected with `400 body_too_deep`. To send " +
+            "files, use the larger endpoint under **File attachments** below. " +
             "How many emails an app may send is covered under **Sending limits**.",
         },
       ],
@@ -181,7 +212,7 @@ export function docSections(base: string): DocSection[] {
           markdown:
             "**Repeats are collapsed.** An identical submission from the same app " +
             "within 60 seconds is treated as the request you already made: it answers " +
-            "`202` with `\"duplicate\": true` and sends no second email. That makes a " +
+            "`200` with `\"duplicate\": true` and sends no second email. That makes a " +
             "double-clicked submit button, or a retry after a slow response, safe to " +
             "send — you never need to build your own idempotency key. A failed send is " +
             "not counted as a repeat, so retrying after a `502` does deliver.",
@@ -286,6 +317,88 @@ export function docSections(base: string): DocSection[] {
       ],
     },
     {
+      id: "file-attachments",
+      heading: "File attachments",
+      blocks: [
+        {
+          kind: "prose",
+          markdown:
+            "Files go to a **second endpoint**, not to the one above. It runs the same " +
+            "pipeline — same secret key, same field contract, same guards, same " +
+            "responses — and differs only in accepting `multipart/form-data` file parts " +
+            "and a larger body. Switch attachments on per app on the " +
+            `[dashboard](${base}/dashboard) first; until you do, a file part is refused ` +
+            "with `422 attachments_not_enabled`.",
+        },
+        { kind: "endpoint", method: "POST", url: attachmentEndpoint },
+        {
+          kind: "prose",
+          markdown:
+            `**Size.** The whole request may total **${formatBytes(
+              ATTACHMENT_MAX_TOTAL_BYTES
+            )}** — text fields and every file together, not per file. Past that it is ` +
+            "refused with `413 payload_too_large`. Check the size in your own code " +
+            "before posting: the limit is also enforced at our web server, which " +
+            "answers with a plain `413` that carries neither CORS headers nor a JSON " +
+            "body, so a browser sees an opaque failure rather than the error code.\n\n" +
+            `**Count.** Up to the app's own limit, at most ${MAX_ATTACHMENTS_CEILING} ` +
+            "files. More than that → `422 too_many_files`.",
+        },
+        {
+          kind: "prose",
+          markdown:
+            "**Accepted types.** The *contents* are checked, not just the name, so " +
+            "renaming a file to get past the list does not work — the bytes have to " +
+            "match the extension, or it is refused with `422 unsupported_file_type`. " +
+            "Archives (`.zip` and friends), programs and legacy `.doc`/`.xls` are not " +
+            "accepted: an archive hides whatever is inside it from that check, and the " +
+            "old Office formats cannot be told apart from a macro file by their bytes.",
+        },
+        {
+          kind: "table",
+          headers: ["Extension", "Type"],
+          rows: ACCEPTED_EXTENSIONS.map((ext) => [`\`.${ext}\``, describeExtension(ext)]),
+        },
+        {
+          kind: "prose",
+          markdown:
+            "**In the email.** Files arrive as real attachments, and the email also " +
+            "gains an *Attached files* row listing each name and size — so a mail client " +
+            "that hides attachments still shows what came with the submission. The row " +
+            "is added for you; a file input does **not** belong in your **Form fields** " +
+            "list.\n\n" +
+            "**What it costs.** A submission with attachments is still **one** send " +
+            "against the app's daily allowance. A refused file costs nothing at all, " +
+            "like the spam guards. The automatic reply to the submitter never carries " +
+            "the attachments back.",
+        },
+        {
+          kind: "code",
+          label: "cURL",
+          code: `curl -X POST ${attachmentEndpoint} \\
+  -H "Authorization: Bearer YOUR_SECRET_KEY" \\
+  -F "name=Jane Doe" \\
+  -F "email=jane@example.com" \\
+  -F "message=My CV is attached." \\
+  -F "files=@/path/to/cv.pdf"`,
+        },
+        {
+          kind: "code",
+          label: "Node.js (fetch) — forwarding a form from your own route",
+          code: `// Server-side only — keep YOUR_SECRET_KEY in an environment variable.
+const incoming = await request.formData();
+
+// Forward it as-is: text fields and files both survive, and fetch sets the
+// multipart boundary itself — never set Content-Type by hand here.
+await fetch("${attachmentEndpoint}", {
+  method: "POST",
+  headers: { "Authorization": \`Bearer \${process.env.MAIL_SENDER_KEY}\` },
+  body: incoming,
+});`,
+        },
+      ],
+    },
+    {
       id: "responses",
       heading: "Responses",
       blocks: [
@@ -293,9 +406,9 @@ export function docSections(base: string): DocSection[] {
           kind: "table",
           headers: ["Status", "Meaning"],
           rows: [
-            ["`202`", "Accepted — the email was sent to the configured address."],
+            ["`200`", "The email was sent to the configured address."],
             [
-              "`202`",
+              "`200`",
               "`duplicate: true` — an identical submission within 60s; no second email sent.",
             ],
             ["`400`", "Empty or invalid body."],
@@ -310,7 +423,12 @@ export function docSections(base: string): DocSection[] {
               "`403`",
               "`destination_unverified` — the destination address hasn't confirmed yet.",
             ],
-            ["`413`", "`payload_too_large` — the request body exceeded 500KB."],
+            [
+              "`413`",
+              `\`payload_too_large\` — the request body exceeded 500KB, or ${formatBytes(
+                ATTACHMENT_MAX_TOTAL_BYTES
+              )} on the attachment endpoint.`,
+            ],
             ["`422`", "`honeypot_filled` — the app's honeypot field arrived non-empty."],
             [
               "`422`",
@@ -321,6 +439,17 @@ export function docSections(base: string): DocSection[] {
               "`timing_missing` — the timing field held nothing usable.",
             ],
             ["`422`", "`spam_rejected` — the content scored past the spam threshold."],
+            [
+              "`422`",
+              "`attachments_not_enabled` — a file was posted but the app doesn't accept them.",
+            ],
+            ["`422`", "`too_many_files` — more files than the app's limit."],
+            [
+              "`422`",
+              "`unsupported_file_type` — the file's type isn't accepted, or its contents don't match its name.",
+            ],
+            ["`422`", "`empty_file` — one of the files was zero bytes."],
+            ["`422`", "`invalid_filename` — a file arrived with no extension."],
             [
               "`429`",
               `\`daily_limit_exceeded\` — the app has used its ${env.appDailySendLimit} sends for the day.`,
@@ -463,7 +592,9 @@ fields the app accepts, and a mail design.
 - [API documentation](${base}/docs.md): the POST /api/v1/send endpoint — bearer-token
   authentication (server-side key), request body shape, the per-app form-field contract,
   the ${env.appDailySendLimit}-per-day per-app sending limit, the honeypot / fill-time /
-  content spam guards, the optional automatic reply to the submitter, response codes,
+  content spam guards, the optional automatic reply to the submitter, the separate
+  POST /api/v1/sendWithAttachment endpoint for multipart file uploads up to
+  ${formatBytes(ATTACHMENT_MAX_TOTAL_BYTES)}, response codes,
   and cURL / Node.js / HTML-form-via-your-own-route examples.
 
 ## Optional
