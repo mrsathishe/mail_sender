@@ -245,11 +245,18 @@ renames a field, after which it produces `400 unknown_field` and reads like our 
 both the `fetch` call and the cURL sample are built from that app's real `fields`,
 `spamGuard` names and `attachments` setting. There is **one** call snippet, not a server
 one and a browser one: since `cors.ts` the request and the reply are identical whoever
-sends it, so a second version could only drift. The generated `<form>` markup was
+sends it, so a second version could only drift. The whole generated `<form>` stays
 **dropped** — the markup is the owner's own, and a form we invent is a page they then have
-to reconcile with theirs; what they cannot guess is the request, so the call and the cURL
-are what is left, and the guard and file inputs their app needs are named in comments above
-the call. It posts `new FormData(form)`, so `attachments` reaches only those comments and
+to reconcile with theirs — but the inputs our own guards require are emitted as a real
+**Hidden inputs your form needs** block rather than as comments, because a comment is not
+runnable code and the honeypot never got added: only the honeypot and the file input are
+there, since those two must exist in the DOM to work at all. The **timing** value is set on
+the `FormData` in the call itself (`body.set(timingField, Date.now() - shownAt)`), which is
+what makes the snippet self-sufficient: writing it into a hidden input meant every
+submission answered `422 timing_missing` (and the old `form.elements[...].value =` threw a
+`TypeError`) for any owner who turned the guard on without hand-editing their markup. For
+the same reason the cURL sample carries a timing value of its own. It posts
+`new FormData(form)`, so `attachments` reaches only that block and
 cURL's `-F` form, never the call itself. The call reads our reply as **JSON plus a status** — deliberately not a
 `303` to a `/thanks` page, because this service is a REST API for servers and browsers
 alike and the caller owns what a visitor then sees. Nothing under `/api` ever replies with

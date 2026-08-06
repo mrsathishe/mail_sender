@@ -75,49 +75,63 @@ function shellSingleQuoted(value: string): string {
 export function integrationSnippets(input: SnippetInput): Snippet[] {
   const { endpoint, fields, spamGuard, attachments } = input;
 
-  // Extra inputs this app's form needs that aren't declared fields. They used to be
-  // shown in a generated `<form>`; the markup is the owner's own, so what is left is
-  // naming them here — the guards reject a submission that arrives without them.
-  const guardNotes = [
+  // Inputs that have to exist in the owner's own markup, because no JS can supply
+  // them: a honeypot is only a trap if a bot parsing the page can see it, and a file
+  // input is the only way a visitor picks a file. The timing value is deliberately
+  // *not* here — it is set on the FormData below, so a form that never got this block
+  // pasted still sends instead of failing `timing_missing` on every submission.
+  const markupParts = [
     spamGuard.honeypotField
-      ? `// Your form also needs a hidden honeypot input named "${spamGuard.honeypotField}",\n` +
-        `// left empty and off-screen — anything that fills it is refused as a bot.\n`
-      : "",
-    spamGuard.timingField
-      ? `// ...and a hidden input named "${spamGuard.timingField}" carrying how long the form\n` +
-        `// has been on screen in ms; faster than ${spamGuard.minSubmitSeconds}s is refused.\n`
+      ? `<!-- Bot trap: real visitors never see this, so anything that fills it is refused.\n` +
+        `     Keep it off-screen rather than display:none — some bots skip hidden inputs. -->\n` +
+        `<div style="position:absolute;left:-9999px" aria-hidden="true">\n` +
+        `  <label for="${spamGuard.honeypotField}">Leave this field empty</label>\n` +
+        `  <input id="${spamGuard.honeypotField}" name="${spamGuard.honeypotField}"\n` +
+        `         type="text" tabindex="-1" autocomplete="off" value="" />\n` +
+        `</div>`
       : "",
     attachments.enabled
-      ? `// Files: add <input name="files" type="file" multiple accept="${ACCEPT_ATTRIBUTE}" />\n` +
-        `// — up to ${attachments.maxFiles}. FormData below carries them as they are.\n`
+      ? `<!-- Up to ${attachments.maxFiles} file${attachments.maxFiles === 1 ? "" : "s"}; the FormData below carries them as they are. -->\n` +
+        `<input name="files" type="file" multiple accept="${ACCEPT_ATTRIBUTE}" />`
       : "",
-  ].join("");
+  ].filter(Boolean);
+
+  const markup = markupParts.length
+    ? `<!-- Paste inside your own <form id="contact"> alongside your ${fields.length === 1 ? "field" : "fields"}. -->\n` +
+      markupParts.join("\n\n")
+    : "";
 
   // The one call, wherever it runs. A browser handler, a framework's onSubmit and your
   // own server all send the identical request and read the identical reply, so there is
   // nothing here to fork on: `new FormData(form)` already carries any file the form has,
   // and there is a single endpoint whether or not this app accepts uploads.
   const call =
-    `// Paste into your form's submit handler.\n` +
+    `// Paste into your page. Runnable as it stands — only the key is yours to fill in.\n` +
     `//\n` +
     `// Anyone who opens the page can read this key. What bounds it is the field list\n` +
     `// this app declares, its confirmed destination and its daily send limit.\n` +
-    guardNotes +
     `const SECRET_KEY = "YOUR_SECRET_KEY";\n\n` +
     `const form = document.getElementById("contact"); // your form's id\n` +
-    (spamGuard.timingField ? `const shownAt = Date.now();\n` : "") +
+    (spamGuard.timingField
+      ? `\n// This app refuses a submission sent in under ${spamGuard.minSubmitSeconds}s, measured from here.\n` +
+        `const shownAt = Date.now();\n`
+      : "") +
     `\n` +
     `form.addEventListener("submit", async (event) => {\n` +
-    `  event.preventDefault();\n` +
+    `  event.preventDefault();\n\n` +
+    `  // Carries every field the form has, files included.\n` +
+    `  const body = new FormData(form);\n` +
     (spamGuard.timingField
-      ? `  form.elements["${spamGuard.timingField}"].value = Date.now() - shownAt;\n\n`
+      ? `  // Set here rather than in a hidden input, so it is right even if the form was\n` +
+        `  // re-rendered — and cannot be forgotten in the markup.\n` +
+        `  body.set("${spamGuard.timingField}", String(Date.now() - shownAt));\n`
       : "") +
+    `\n` +
     `  const res = await fetch("${endpoint}", {\n` +
     `    method: "POST",\n` +
     `    headers: { "Authorization": \`Bearer \${SECRET_KEY}\` },\n` +
-    `    // Carries every field the form has, files included. Never set Content-Type by\n` +
-    `    // hand here — fetch has to add the multipart boundary itself.\n` +
-    `    body: new FormData(form),\n` +
+    `    // Never set Content-Type by hand — fetch has to add the multipart boundary itself.\n` +
+    `    body,\n` +
     `  });\n\n` +
     `  // Always JSON plus a status, never a redirect, so this page decides what happens\n` +
     `  // next — a message of your own, or location.assign("/thanks") instead.\n` +
@@ -134,11 +148,18 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
   const sample: Record<string, string> = {};
   for (const field of fields) sample[field.id] = sampleFor(`${field.id} ${field.name}`);
 
+  // The timing guard has to be satisfied here too, or a copied cURL answers
+  // `422 timing_missing` and reads as a broken sample rather than a guard doing its job.
+  // A plain elapsed duration, not an epoch stamp, so it stays valid whenever it is run.
+  if (spamGuard.timingField && spamGuard.minSubmitSeconds > 0) {
+    sample[spamGuard.timingField] = String((spamGuard.minSubmitSeconds + 1) * 1000);
+  }
+
   const curl = attachments.enabled
     ? `curl -X POST ${endpoint} \\\n` +
       `  -H "Authorization: Bearer YOUR_SECRET_KEY" \\\n` +
-      fields
-        .map((f) => `  -F "${f.id}=${shellSingleQuoted(sample[f.id])}" \\\n`)
+      Object.entries(sample)
+        .map(([key, value]) => `  -F "${key}=${shellSingleQuoted(value)}" \\\n`)
         .join("") +
       `  -F "files=@/path/to/file.pdf"`
     : `curl -X POST ${endpoint} \\\n` +
@@ -147,6 +168,9 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
       `  -d '${shellSingleQuoted(JSON.stringify(sample))}'`;
 
   return [
+    // Only shown when there is something the markup must carry — an app with no
+    // honeypot and no uploads needs nothing added to its form.
+    ...(markup ? [{ id: "markup", label: "Hidden inputs your form needs", code: markup }] : []),
     { id: "call", label: "The call that sends your form", code: call },
     { id: "curl", label: "cURL — try it from a terminal", code: curl },
   ];

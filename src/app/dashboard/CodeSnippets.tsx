@@ -35,9 +35,9 @@ export function CodeSnippets({
         {spamGuard.honeypotField || spamGuard.minSubmitSeconds > 0
           ? " and its spam-guard fields"
           : ""}
-        . Replace <code>YOUR_SECRET_KEY</code> with the secret key for this app — from an
-        environment variable if you have somewhere server-side to hold it. Change the
-        fields here and the code below changes with them.
+        . Runnable as it stands: the only thing to fill in is{" "}
+        <code>YOUR_SECRET_KEY</code> — from an environment variable if you have somewhere
+        server-side to hold it. Change the fields here and the code below changes with them.
       </p>
 
       {snippets.map((snippet) => (
