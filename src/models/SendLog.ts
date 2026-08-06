@@ -1,4 +1,6 @@
 import { Schema, model, models, Types, type Model, type InferSchemaType } from "mongoose";
+import { env } from "@/lib/env";
+import { mockSendLogModel } from "@/mocks/mock-db";
 
 // One row per /v1/send attempt against a known app — powers the admin activity view
 // and the owner's own per-app history (SPEC §4f).
@@ -51,5 +53,7 @@ export type SendLogKind = "submission" | "autoresponse";
 
 export type SendLogDoc = InferSchemaType<typeof SendLogSchema> & { _id: Types.ObjectId };
 
-export const SendLog: Model<SendLogDoc> =
-  (models.SendLog as Model<SendLogDoc>) || model<SendLogDoc>("SendLog", SendLogSchema);
+// The MOCK_MODE swap — see the note in models/User.ts.
+export const SendLog: Model<SendLogDoc> = env.mockMode
+  ? (mockSendLogModel as unknown as Model<SendLogDoc>)
+  : (models.SendLog as Model<SendLogDoc>) || model<SendLogDoc>("SendLog", SendLogSchema);

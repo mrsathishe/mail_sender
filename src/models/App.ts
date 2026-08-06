@@ -1,16 +1,20 @@
 import { Schema, model, models, Types, type Model, type InferSchemaType } from "mongoose";
+import { env } from "@/lib/env";
+import { mockAppModel } from "@/mocks/mock-db";
 import { DEFAULT_TEMPLATE_ID, TEMPLATE_IDS } from "@/lib/templates";
 import { DEFAULT_FIELDS } from "@/lib/fields";
 import { MAX_MIN_SUBMIT_SECONDS } from "@/lib/bot-guard";
 import { DEFAULT_MAX_ATTACHMENTS, MAX_ATTACHMENTS_CEILING } from "@/lib/attachments";
 import { AUTO_MESSAGE_MAX, AUTO_SUBJECT_MAX } from "@/lib/auto-responder";
 
-// Subdocument, so a field is one row with its own `required` flag rather than two
+// Subdocument, so a field is one row carrying both halves of the pair rather than two
 // parallel arrays. `_id: false` keeps the list a plain value the API can echo back.
 const FieldSchema = new Schema(
   {
+    // What the form posts (HTML `name` / JSON key).
+    id: { type: String, required: true, trim: true },
+    // What the email row is labelled with — the owner's own wording, not derived.
     name: { type: String, required: true, trim: true },
-    required: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -97,5 +101,7 @@ const AppSchema = new Schema(
 
 export type AppDoc = InferSchemaType<typeof AppSchema> & { _id: Types.ObjectId };
 
-export const App: Model<AppDoc> =
-  (models.App as Model<AppDoc>) || model<AppDoc>("App", AppSchema);
+// The MOCK_MODE swap — see the note in models/User.ts.
+export const App: Model<AppDoc> = env.mockMode
+  ? (mockAppModel as unknown as Model<AppDoc>)
+  : (models.App as Model<AppDoc>) || model<AppDoc>("App", AppSchema);

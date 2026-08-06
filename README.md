@@ -4,29 +4,26 @@ A middleware service that lets any website deliver its form submissions to an
 email inbox — without the website owning any mail infrastructure. The destination
 can be any provider: Gmail, Zoho, Outlook or your own domain.
 
-A visitor fills out a form on your site and clicks **Send**. Your **backend**
-`POST`s the form fields (plus a secret key) to this service — the key is a
-server-side credential, so a static site posts to a small route of its own that
-forwards the submission. Mailer verifies the secret, checks the submission against
-the fields that app declared, renders them with the app's chosen **mail design**,
-and emails it — from **our own** sending account — to the **destination address**
-you configured when you registered the app.
+A visitor fills out a form on your site and clicks **Send**. One `fetch` call
+`POST`s the form fields (plus a secret key) to this service — from the page itself,
+your own backend or a shell script, since the endpoint accepts cross-origin calls
+and answers the same way to all three. Mailer verifies the secret, checks the
+submission against the fields that app declared, renders them with the app's chosen
+**mail design**, and emails it — from **our own** sending account — to the
+**destination address** you configured when you registered the app.
 
 > This is **Step 1 (Basic)**. This README and [CLAUDE.md](CLAUDE.md) are the
 > authoritative description of what the service does — including the selectable mail
-> designs and provider-agnostic destinations — and what is deliberately left out
-> (file handling, OAuth login, a platform-wide send budget).
+> designs, provider-agnostic destinations and opt-in file attachments — and what is
+> deliberately left out (OAuth login, a platform-wide send budget).
 
 ## How it works
 
 ```
 Website form (name / message / file)
-        │  click "Send"
+        │  submit handler, fetch(FormData)
         ▼
-Your own backend route   ← holds the secret key; the browser never sees it
-        │
-        ▼
-POST /v1/send            ← called server-to-server
+POST /v1/send            ← from the page, your server or curl; same either way
   Authorization: Bearer <secret key>
   body: { name, message, ... }
         │
@@ -114,6 +111,38 @@ npm run dev
 
 Open http://localhost:3000. The dev server hot-reloads on change.
 
+#### Local development with no database (mock mode)
+
+`npm run dev` needs neither MongoDB nor an SMTP account if `MOCK_MODE=1` is set: the five
+models are swapped for the in-memory ones in [src/mocks/mock-db.ts](src/mocks/mock-db.ts),
+seeded from [src/mocks/mock-data.ts](src/mocks/mock-data.ts), and mail is printed to the
+terminal instead of being sent.
+
+Put it in **`.env.development`** rather than `.env` — Next loads that file for `npm run dev`
+and never for `npm run build` / `npm start`, so the mock cannot follow a deploy. `mockMode`
+in [src/lib/env.ts](src/lib/env.ts) also requires `NODE_ENV=development`, which is the
+backstop:
+
+```bash
+# .env.development  (git-ignored)
+MOCK_MODE=1
+AUTH_SECRET=any-throwaway-value-openssl-rand-base64-32
+```
+
+Sign in with either seeded account:
+
+| Email | Password | Role |
+| --- | --- | --- |
+| `mock@satz.co.in` | `Mock@12345` | user — owns three apps, one of them awaiting confirmation |
+| `admin@satz.co.in` | `Admin@12345` | admin — the `/admin` pages |
+
+The pending destination code on the unconfirmed app is `TESTCODE`. A code issued *during* a
+mock session is printed to the terminal, which is the only inbox there is. Edits made while
+clicking around survive hot-reload (the store is cached on `global`) and are lost when the
+dev server restarts. Nothing about mock mode reaches the real database in `.env` — that is
+the point of it. To exercise `/v1/send` end to end, or registration and password reset,
+which need real mail, drop `MOCK_MODE` and point `MONGO_URI` at a database.
+
 ### Production
 
 ```bash
@@ -132,20 +161,32 @@ curl http://localhost:3000/api/health
 1. **Register** an account (email + password) at `/register`. We email an
    **8-character code**; enter it on `/verify-email` to activate the account. Until
    then every authed page redirects back there.
-2. From the **dashboard**, register an app by providing a website name, the
-   **destination email** (where submissions land — any provider), the **form
-   fields** it will submit, and one of the five **mail designs**.
+2. From the **dashboard**, follow **Register an app** to `/dashboard/register`. The
+   whole thing is one page of numbered sections: a website name, the **destination
+   email** (where submissions land — any provider), the **form fields** it will
+   submit, one of the five **mail designs**, and then the three optional settings —
+   **auto-reply**, **spam guard** and **attachments**, each marked optional and off
+   unless you switch it on. A review of the choices is the last section, and the key
+   is issued from there.
    - Tick **"send to my account address"** (or type the address you signed up with)
      and the app is ready immediately — the **secret key** is shown **once**, so
      copy it; only a hash is stored.
    - Any other address is emailed a code. The app is created with **no key**;
      entering the code confirms the address and issues the key.
-   The fields and design can both be changed later from the same screen; the
-   destination, confirmation status, fields and design are shown on each app row.
-3. Call the API **from your server** with that key — it is a server-side
-   credential, and a browser cannot make the call anyway: the key travels in an
-   `Authorization` header, which a plain HTML form cannot set. A static site posts
-   its form to a small route of its own that forwards the submission:
+   Every one of those settings can be changed later from the app's row on the
+   dashboard, through the row's single **Actions** menu — edit fields, change design,
+   auto-reply, spam guard, attachments, get the code, regenerate key. Opening one turns
+   the menu into **Cancel**, so a row is only ever doing one thing at a time. The
+   destination, confirmation status, fields and design are shown on each row, and an
+   app that has a key carries its **Activity** panel at the bottom of the row.
+3. Call the API with that key from wherever your form lives — the page's own submit
+   handler, your backend, or curl. Cross-origin calls are accepted from any origin,
+   so no route of your own is needed. The one thing that won't work is a plain HTML
+   form submit: the key travels in an `Authorization` header, which a native form
+   post cannot set, so use `fetch`. A key in page JavaScript is readable by anyone,
+   so put it in an environment variable where you have somewhere server-side to do
+   that; where you don't, a scraped key still reaches only that app's confirmed
+   destination, only in its declared fields, and only up to its daily limit.
 
 ```http
 POST /v1/send
@@ -155,13 +196,15 @@ Content-Type: application/json
 { "name": "Jane", "message": "Hello there", "phone": "12345" }
 ```
 
-To attach files, post `multipart/form-data` to **`/v1/sendWithAttachment`** instead —
-same key, same fields, same responses, with the whole request capped at 5MB rather than
-500KB. Switch attachments on for the app first (dashboard → **Attachments**), or a file
-part is refused with `422 attachments_not_enabled`. Accepted types are checked by their
-*contents*, not their name. The dashboard's **Get the code** button on each app row
-generates the form, the forwarding route and a cURL example from that app's own fields
-and settings, so the snippet always matches the contract the endpoint enforces. Every
+To attach files, post `multipart/form-data` to that **same** endpoint — same key, same
+URL, same fields, same responses, with the whole request capped at 5MB rather than 500KB.
+Switch attachments on for the app first (dashboard → **Attachments**), or a file part is
+refused with `422 attachments_not_enabled` and nothing is sent. Accepted types are checked
+by their *contents*, not their name. The dashboard's **Get the code** action on each app row
+generates the `fetch` call that sends your form and a cURL example, both from that app's own
+fields and settings, so the snippet always matches the contract the endpoint enforces. The
+form markup itself is yours — what you cannot guess is the request, so that is what is
+generated, with any guard or file inputs your app needs named in comments above the call. Every
 response is JSON plus an HTTP status — the API never answers with a redirect, so showing a
 message or moving the visitor to a thank-you page is your site's decision.
 
@@ -174,14 +217,20 @@ Message: Hello there
 Phone: 12345
 ```
 
-**Form fields.** Every app declares which field names it accepts. A new one starts
-with `name`, `email` and `message` **required** plus `phone` optional, and you can
-add, rename or remove up to 25 of them from the dashboard. The check is strict: a
-field you didn't declare is refused with `400 unknown_field` and a missing required
-one with `400 missing_field` (both name the offending field), and no email is sent.
-That is what stops a leaked key being used to mail arbitrary content to your inbox.
-Names match case-insensitively, and rows always arrive in the order you declared —
-an optional field you left out still shows as `—`, so the email layout never shifts.
+**Form fields.** Every app declares its fields as a **pair**: the `id` your form posts,
+and the label the email row carries. So `company` / "Company Name" means a submission of
+`{ "company": "Acme Inc." }` arrives as a row reading `Company Name: Acme Inc.` — the label
+is your text, used as written, so nothing turns `Order ID` into `Order id`. A new app
+starts with `name`, `email`, `phone` and `message`, and you can add, rename or remove up to
+25 of them from the dashboard.
+
+The check is strict in one direction only: a field you didn't declare is refused with
+`400 unknown_field` (naming it) and no email is sent — that is what stops a leaked key
+being used to mail arbitrary content to your inbox. Nothing is **required**, because
+whether a visitor had to fill something in is your own form's check, in your own words,
+next to the input; a field that arrives empty is delivered as `—`. Ids match
+case-insensitively, and rows always arrive in the order you declared, so the email layout
+never shifts.
 
 **Sending limits.** Each app may send **500 emails per day** (UTC, reset at
 midnight). A contact form never comes close; the limit is there so one runaway script
@@ -235,11 +284,11 @@ days, and the auto-reply is labelled separately from the submission.
 | `200` | Email sent to the configured address. |
 | `200` | `duplicate: true` — identical submission within 60s; no second email sent. |
 | `400` | Bad request (missing/invalid body). |
-| `400` | `unknown_field` / `missing_field` — the submission broke the app's field list. |
+| `400` | `unknown_field` — the submission contained a field the app doesn't declare. |
 | `400` | `body_too_deep` — the body nests more than 5 levels. |
 | `401` | Secret key missing or invalid. |
 | `403` | `destination_unverified` — the destination hasn't confirmed its address. |
-| `413` | `payload_too_large` — the request body exceeded 500KB, or 5MB on `/v1/sendWithAttachment`. |
+| `413` | `payload_too_large` — the request body exceeded 500KB, or 5MB for an app with attachments switched on. |
 | `422` | `honeypot_filled` / `too_fast` / `timing_missing` — a bot signal fired. |
 | `422` | `spam_rejected` — the content scored past the spam threshold. |
 | `422` | `attachments_not_enabled` / `too_many_files` / `unsupported_file_type` / `empty_file` / `invalid_filename` — an attachment was refused. |
@@ -291,10 +340,12 @@ service). Check status/logs with `sudo systemctl status mail-sender` and
 
 > **File uploads need the nginx config recopied.** `client_max_body_size` is
 > per-location: the server default stays at `1m`, and `deploy/nginx.conf` raises it to
-> `6m` only on `/api/v1/sendWithAttachment` and `/api/contact`. An older copy of the
-> file rejects every upload with an nginx `413` before the app ever sees it, so redo
-> the two `cp` / `nginx -t` steps above on an existing VPS. No database migration is
-> needed — `attachments` defaults to off on every app.
+> `6m` on `/api/v1/send` and `/api/contact`. An older copy of the file rejects every
+> upload with an nginx `413` before the app ever sees it, so redo the two `cp` /
+> `nginx -t` steps above on an existing VPS — and do it *before* `npm run deploy`, since
+> the app alone cannot raise the edge limit. No database migration is needed —
+> `attachments` defaults to off on every app, and it is that per-app setting, not the
+> URL, that decides which of the two body caps applies.
 
 #### One-off migration (mail designs release)
 
@@ -343,7 +394,28 @@ node scripts/migrate-sendlog-indexes.mjs   # idempotent — safe to re-run
 npm run deploy
 ```
 
-#### This release (spam guards, auto-reply, activity) — no migration
+#### One-off migration (field ids and labels release)
+
+A field used to be `{ name, required }`, where `name` was both the key the form posted and
+the source of the row's label. It is now `{ id, name }` — the posted key and the label you
+write — and there is no `required` any more, so `/v1/send` no longer answers
+`400 missing_field`: an empty value is delivered as empty, because whether a visitor had to
+fill it in is your own form's check.
+
+Not strictly required for correctness — `resolveFields()` reads a legacy row as
+`{ id: <that name>, name: titleize(<that name>) }`, which is exactly what the script writes
+— but a document that says what it means is worth having, and the label is seeded with the
+same wording the old renderer produced, so no email changes on the day it runs. Owners can
+then edit `Order id` into `Order ID`, which is the point of storing it.
+
+```bash
+sudo systemctl stop mail-sender
+git pull && npm ci
+node scripts/migrate-app-field-ids.mjs   # idempotent — apps already carrying `id` are skipped
+npm run deploy
+```
+
+#### The spam guards, auto-reply and activity release — no migration
 
 `spamGuard`, `autoResponder`, `SendLog.kind` and the two `blocked_*` statuses are all
 **additive**, so existing documents stay readable and every app keeps behaving exactly
@@ -401,21 +473,24 @@ src/
       apps/            register + list apps, edit fields/design/guard/auto-reply,
                        confirm/resend destination, per-app activity
       templates/       design previews for the dashboard picker
-      v1/send/         the public send endpoint (Node runtime)
-      v1/sendWithAttachment/  the same pipeline, with file uploads up to 5MB
+      v1/send/         the public send endpoint — JSON or multipart, with file
+                       uploads up to 5MB for apps that enable them (Node runtime)
       contact/         our own help form (internal, unauthenticated, guarded)
       health/          health check
     page.tsx           public landing page (signed-in visitors → /dashboard)
     contact/           contact details, help form, FAQ
-    dashboard/         apps manager UI
+    dashboard/         apps manager UI + register/ (the register page's sections)
     login/ register/ forgot-password/ reset-password/ verify-email/
     robots.ts sitemap.ts manifest.ts opengraph-image.tsx apple-icon.tsx icon.svg
   components/          site shell — header, mobile nav, footer, logo, page header
   lib/                 auth, db, jwt, mailer, password, secret, env, flatten,
                        templates, fields, bot-guard, spam-score, auto-responder,
                        api-docs, base-url, brand, seo, otp, verification-mail
-  models/              User, App, SendLog, DailyUsage, SendDedupe (Mongoose)
-  middleware.ts        session + email-verification gating
+  models/              User, App, SendLog, DailyUsage, SendDedupe — each one either the
+                       Mongoose model or its mock, chosen by MOCK_MODE
+  mocks/               mock-data.ts (the values) + mock-db.ts (in-memory models),
+                       read only in development, never in a build
+  proxy.ts             session + email-verification gating (Next 16's middleware hook)
 public/                logo-lockup.png (hero/OG), logo-mark.png (header), icon-512.png
 deploy/                VPS deploy — nginx.conf, setup.sh, deploy.sh, systemd unit
 scripts/               one-off data migrations + reset-db.mjs (destructive wipe)

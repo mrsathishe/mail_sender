@@ -1,4 +1,6 @@
 import { Schema, model, models, type Model, type InferSchemaType } from "mongoose";
+import { env } from "@/lib/env";
+import { mockUserModel } from "@/mocks/mock-db";
 
 const UserSchema = new Schema(
   {
@@ -23,5 +25,10 @@ const UserSchema = new Schema(
 
 export type UserDoc = InferSchemaType<typeof UserSchema>;
 
-export const User: Model<UserDoc> =
-  (models.User as Model<UserDoc>) || model<UserDoc>("User", UserSchema);
+// The MOCK_MODE swap (env.mockMode, dev only): the in-memory collection from
+// src/mocks/mock-db.ts stands in for the real model, so every caller keeps calling
+// `User.findOne(...)` and there is no second code path to keep in sync. The cast is
+// the seam — the mock implements the subset of the model API this app actually uses.
+export const User: Model<UserDoc> = env.mockMode
+  ? (mockUserModel as unknown as Model<UserDoc>)
+  : (models.User as Model<UserDoc>) || model<UserDoc>("User", UserSchema);

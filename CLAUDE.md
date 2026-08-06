@@ -39,6 +39,7 @@ npm run deploy         # VPS updates: npm ci, rebuild, systemctl restart mail-se
 node scripts/migrate-app-fields.mjs   # one-off data migration (idempotent)
 node scripts/migrate-destination-verification.mjs   # one-off; grandfathers users, gates unproven destinations
 node scripts/migrate-sendlog-indexes.mjs            # one-off; builds SendLog TTL + compound index, drops the old one
+node scripts/migrate-app-field-ids.mjs              # one-off; App.fields {name,required} -> {id,name}
 node scripts/reset-db.mjs --db <name> --yes          # DESTRUCTIVE; drops the 5 collections, needs both flags
 node scripts/check-smtp.mjs [to@x.com]              # prove SMTP settings (connect, optionally send)
 ```
@@ -56,7 +57,8 @@ rendered only for signed-in visitors; the rest of `/docs` is public).
 Required env vars are listed in [.env.example](.env.example): `APP_URL`,
 `AUTH_SECRET`, `MONGO_URI`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, plus optional
 `SMTP_PORT` / `SMTP_SECURE` / `SMTP_FROM` / `SEND_APP_DAILY_LIMIT` /
-`SPAM_SCORE_THRESHOLD`. Port defaults to 587 and `secure` is
+`SPAM_SCORE_THRESHOLD`. `MOCK_MODE` is dev-only and belongs in `.env.development`, not
+here (see the mock-database note under Architecture). Port defaults to 587 and `secure` is
 inferred from it (465 → implicit TLS) unless set explicitly; `SMTP_HOST` has no
 default on purpose, so a missing value fails loudly instead of relaying through
 someone else's server. The sending account is a **GoDaddy Professional Email (Pro
@@ -103,15 +105,35 @@ our own address and the submitter goes in
 `export const runtime = "nodejs"` — Nodemailer opens an SMTP socket, which Edge
 cannot do.
 
-That pipeline is a **library, not a route**, because two routes run it:
-[/api/v1/send](src/app/api/v1/send/route.ts) and
-[/api/v1/sendWithAttachment](src/app/api/v1/sendWithAttachment/route.ts) are ~8-line
-shells calling `handleSend(req, { attachments })`. They differ in exactly three places,
-all marked `opts.attachments`: the byte cap, the attachment step, and what is handed to
-`sendMail`. A second copy would drift, and drift in *this* order (guards before quota,
-dedupe before quota, body read after auth) is a security bug rather than a cosmetic one.
-Two paths rather than one flag because nginx's `client_max_body_size` is **per-location**
-— the 500KB endpoint keeps a 1m guard at the edge while only the upload path is raised.
+**The send endpoint is browser-callable, and that is the whole integration story**
+([src/lib/cors.ts](src/lib/cors.ts)). The customer is often a frontend with no backend, so
+its page calls `/v1/send` directly: the route answers the preflight with `corsPreflight()`
+and **every** return path of the pipeline goes through `corsJson()` — including the
+failures, because a response without the header is unreadable to the page, which turns
+`{ error: "unknown_field", field: "emial" }` into an opaque "CORS error" exactly when the
+field name is what's needed. Origins are unrestricted deliberately: CORS only ever
+restrained browsers, so an allowlist would break a customer's staging domain while buying
+nothing against curl. This means the secret key **is** readable in a client build, and what
+bounds a scraped one is the field contract, destination verification and the daily cap — not
+its secrecy. Two consequences to keep in mind: a plain `<form action>` still cannot call us
+(it cannot set `Authorization`, which is why every example is a `fetch`), and an
+nginx-generated error (the per-location `client_max_body_size` `413`, a `502` mid-restart)
+carries no CORS headers, so a browser sees an opaque failure where a server reads the
+status — the docs say so under **File attachments**.
+
+That pipeline is a **library, not a route**, because the route is a ~10-line shell:
+[/api/v1/send](src/app/api/v1/send/route.ts) calls `handleSend(req)` and owns nothing else.
+There is **one** send endpoint for JSON and multipart alike, and whether file parts are
+kept and whether the 5MB cap applies instead of 500KB is read from the **app's**
+`attachments.enabled`, never from the URL. A second `/v1/sendWithAttachment` route existed
+for exactly that split — nginx's `client_max_body_size` is per-location, so only the upload
+path was raised — and was deleted because the cost landed on the customer: switching the
+setting on was not enough, they also had to change the URL their form posted to, and a file
+sent to the wrong one was **silently dropped**. `keepFiles` is now unconditional so that
+file reaches `checkAttachments()` and is refused by name (`422 attachments_not_enabled`)
+instead. The edge cap moved onto the one send location, which means all send traffic passes
+a 6m gate and is then held to its real per-app cap in the app; `deploy/nginx.conf` explains
+why request buffering stays on rather than streaming.
 
 **Spam defence is two libraries with opposite failure modes** (SPEC §4d).
 [bot-guard.ts](src/lib/bot-guard.ts) owns the per-app honeypot and minimum fill time:
@@ -140,17 +162,28 @@ improving the wording reaches every app that never customised it. It renders thr
 prose layout, not five more renderers.
 
 **Submissions are held to a per-app contract** ([src/lib/fields.ts](src/lib/fields.ts),
-SPEC §4b). Each `App` stores `fields: [{ name, required }]`, defaulted to
-name/email/phone/message so registering one stays a short form. `/v1/send` refuses an
-undeclared field with `400 unknown_field` and a missing required one with
-`400 missing_field`, echoing the field name — a valid key proves the request came from
-the app, not that the payload is the form its owner built, so without this a leaked key
-mails attacker-chosen content through our own sending domain. Names are matched
-case-insensitively but stored and rendered under the declared spelling, and
-`orderSubmission()` emits **every** declared field in declared order (an omitted
-optional one renders as `—`) so the destination inbox sees a stable layout instead of
-one that shifts with each request. The rules live only in `fields.ts` — the API routes
-and the dashboard's pre-flight check both defer to it.
+SPEC §4b). Each `App` stores `fields: [{ id, name }]` — the **id** its form posts and the
+**name** the email row is labelled with — defaulted to name/email/phone/message so
+registering one stays a short form. Two values rather than one derived from the other,
+because a label guessed from a key can only approximate it: `order-id` titleizes to
+"Order id", never "Order ID", and no rule turns `company` into "Company Name". `/v1/send`
+refuses an undeclared field with `400 unknown_field`, echoing the field name — a valid key
+proves the request came from the app, not that the payload is the form its owner built, so
+without this a leaked key mails attacker-chosen content through our own sending domain.
+Ids are matched case-insensitively but stored under the declared spelling, and
+`orderSubmission()` emits **every** declared field in declared order, **keyed by its
+label** (an omitted one renders as `—`), so the destination inbox sees a stable layout
+instead of one that shifts with each request.
+
+There is deliberately **no required flag**, and so no `missing_field`: whether a visitor
+must fill something in is the website's own check, made with its own wording next to the
+input, and an empty value is delivered as empty. Rejecting fields nobody declared is this
+service's business; re-litigating a form's UX is not. Renaming that persisted field needed
+`scripts/migrate-app-field-ids.mjs`; `resolveFields()` also reads a legacy
+`{ name, required }` row as `{ id: name, name: titleize(name) }`, so an app whose migration
+hasn't run still sends correctly. The rules live only in `fields.ts` — the API routes and
+the dashboard's pre-flight both call `parseFields` itself rather than a hand-written mirror
+of it, since a mirror is what drifts.
 
 **Two counters guard the shared mailbox, and both are atomic on purpose** (SPEC §4c).
 [send-limit.ts](src/lib/send-limit.ts) enforces `SEND_APP_DAILY_LIMIT` (500/app/UTC
@@ -178,12 +211,15 @@ input far deeper than `flatten.ts`'s recursion survives, so without it a 10KB bo
 5000 nested arrays returns a 500 instead of a `400`. Never swap
 `readLimitedBody()` back to `req.json()`/`req.formData()` — both buffer without a
 limit, which is also why the multipart branch re-wraps already-counted bytes.
-The cap is an **argument** (`maxBytes`) rather than a constant so the upload endpoint can
+The cap is an **argument** (`maxBytes`) rather than a constant so an upload-enabled app can
 raise it to 5MB without a second reader; `keepFiles` likewise decides whether file parts
-are returned or dropped, and defaults to dropping so nothing that already calls it
-changed. `deploy/nginx.conf` keeps `client_max_body_size` just above each cap —
-1m server-wide, 6m on the two upload locations; raise the pair together or neither takes
-effect. The `proxy_set_header` lines live in the `server` block on purpose: setting *any*
+are returned or dropped, and the send pipeline always passes `true` so a file posted to an
+app with uploads off is refused by name instead of vanishing. `deploy/nginx.conf` keeps
+`client_max_body_size` just above the largest cap — 1m server-wide, 6m on `/api/v1/send`
+alone; raise that pair together or neither takes
+effect. `/api/contact` is deliberately **not** in that list: our own help form takes text
+only, and an unauthenticated route is the last one that should be able to hand Node a
+multi-megabyte body. The `proxy_set_header` lines live in the `server` block on purpose: setting *any*
 of them inside a `location` replaces the whole inherited set, which would silently drop
 the forwarded headers middleware depends on.
 
@@ -206,11 +242,15 @@ built-ins so the dashboard's client editor can read its constants, like `bot-gua
 ([src/lib/snippets.ts](src/lib/snippets.ts), rendered by the "Get the code" button on each
 dashboard row). A generic `name`/`email`/`message` example is correct only until an owner
 renames a field, after which it produces `400 unknown_field` and reads like our bug — so
-the form markup, the forwarding route, and the cURL/fetch samples are all built from that
-app's real `fields`, `spamGuard` names and `attachments` setting, including which of the
-two endpoints it should post to. It reuses `titleize()` from `flatten.ts` for labels, so a
-field reads the same in the form and in the email. The generated form submits with `fetch`
-and the forwarding route answers **JSON, passing our status through** — deliberately not a
+both the `fetch` call and the cURL sample are built from that app's real `fields`,
+`spamGuard` names and `attachments` setting. There is **one** call snippet, not a server
+one and a browser one: since `cors.ts` the request and the reply are identical whoever
+sends it, so a second version could only drift. The generated `<form>` markup was
+**dropped** — the markup is the owner's own, and a form we invent is a page they then have
+to reconcile with theirs; what they cannot guess is the request, so the call and the cURL
+are what is left, and the guard and file inputs their app needs are named in comments above
+the call. It posts `new FormData(form)`, so `attachments` reaches only those comments and
+cURL's `-F` form, never the call itself. The call reads our reply as **JSON plus a status** — deliberately not a
 `303` to a `/thanks` page, because this service is a REST API for servers and browsers
 alike and the caller owns what a visitor then sees. Nothing under `/api` ever replies with
 a redirect; the only `Response.redirect` in the app is page gating in
@@ -255,6 +295,16 @@ stores a `templateId` and users pick/switch, never edit. Each design also carrie
 drift) and which `renderAutoReplyHtml()` uses to render the autoresponse — that mail is
 prose rather than rows, so it is one layout parameterised by palette, not a sixth design.
 
+One rule holds the two halves together: a submission's **top-level keys are already the
+row labels** by the time either renderer sees it (`orderSubmission()` keys by each declared
+field's label), so `buildEmailBody()` and `toRows()` print them verbatim and only *nested*
+keys go through `titleize()`. That is why `/api/contact` builds its own data keyed
+`Name`/`Email`/`Subject`/`Message`, and why `PREVIEW_DATA` is keyed the same way — a
+renderer that titleized the top level would rewrite the owner's own wording, turning
+`Order ID` into `Order id`. `findReplyTo()` is therefore called on the submission **as
+posted**, not on the labelled copy: a label like "Where can we reach you?" is not a name it
+can recognise, while the declared id (`email`) is exactly what it looks for.
+
 **The public docs have one source, three renderings.** [src/lib/api-docs.ts](src/lib/api-docs.ts)
 holds the API documentation as typed *blocks* (`prose` / `code` / `endpoint` /
 `table`); [/docs](src/app/docs/page.tsx) renders each block with its own component
@@ -273,6 +323,35 @@ when a value is read at request time, so a missing var never breaks the build.
 Mongoose connections are cached on `global` ([src/lib/db.ts](src/lib/db.ts)) to
 survive dev hot-reloads; every route calls `connectDB()` itself.
 
+**Dev runs on a mock database, and the swap is a whole-model swap** (`MOCK_MODE`,
+[src/mocks/](src/mocks/)). There is no MongoDB reachable from a dev machine here, so
+`next dev` would otherwise not start: with the flag on, each of the five files in
+`src/models/` exports the in-memory collection from
+[mock-db.ts](src/mocks/mock-db.ts) instead of its Mongoose model, seeded from
+[mock-data.ts](src/mocks/mock-data.ts) — the one file to edit to change what a mock run
+contains. **No route, page or lib knows the setting exists**: they keep calling
+`App.find(...)` and `user.save()`, which is the whole reason the swap sits at the model
+boundary rather than as a branch per handler — a second code path through twelve routes is
+one that drifts from the real one. `connectDB()` becomes a no-op and the mailer switches to
+nodemailer's `jsonTransport` (printing the mail, which is how an OTP is "received" with no
+inbox), so a local run cannot send from the production mailbox by accident.
+
+Three things carry it. Ids in the mock data are **24-hex**, because every per-app route
+guards with `isValidObjectId` and would 404 anything else. Password hashes are real bcrypt
+and the pending OTP is a real `hashOtp()`, so `verifyPassword`/`checkOtp` run unmodified.
+And the query engine implements exactly what the app calls, with `unsupported()` throwing
+by name for anything else — a mock that silently returns the wrong rows is worse than no
+mock. `save()` on a mock document is a deliberate no-op: the record *is* the stored object,
+so the mutation has already landed.
+
+The switch is a **file**, not a flag to remember: `MOCK_MODE=1` lives in
+`.env.development`, which Next loads for `next dev` and never for `next build`/`next start`,
+and `env.mockMode` additionally requires `NODE_ENV === "development"`. It returns `false`
+rather than throwing in production precisely because `next build` does read that file while
+compiling — throwing there would fail a correct build over a dev file doing its job. Not
+covered, because they need real mail rather than a database: registration, email
+verification, password reset, and `/v1/send` end to end.
+
 **One shell for every page, and two public pages** (SPEC §5b).
 [layout.tsx](src/app/layout.tsx) renders `SiteHeader` → `<main id="main">` →
 `SiteFooter` plus a skip link, so the nav exists once instead of in each area's own
@@ -281,11 +360,17 @@ header reads the session, which is what makes every route render dynamically —
 effectively already did behind `next start`. `/` is a public marketing page (it
 redirects signed-in visitors to `/dashboard`) because with the dashboard behind a
 login wall there was nothing for a crawler to index; its JSON-LD must keep mirroring
-the visible copy. It is deliberately short — hero, live-on, audience, features, what it
-isn't, CTA — because the how-it-works steps, the `curl` block, the sample email and the
-example dashboard row each restated something `/docs` or the dashboard already owns.
-Customer logos go in `public/logos/` rather than hotlinked from the customer's own site,
-whose asset paths carry build hashes.
+the visible copy. It is deliberately short — hero, who it's for, features, who it's not
+for, live-on, CTA — because the how-it-works steps, the `curl` block, the sample email and
+the example dashboard row each restated something `/docs` or the dashboard already owns.
+The two "who" sections carry no eyebrow label (`Section`'s `label` is optional) since
+their headings already name them, and **live-on comes last**: proof reads better after
+the pitch it is proof of. Client logos go in `public/logos/` rather than hotlinked from
+the client's own site, whose asset paths carry build hashes. The one claim on this page
+that needs care is "Nothing delivered is stored" — true as scoped, because a `sent`
+`SendLog` row holds no submission fields, while a `blocked_spam` row does keep the
+matched keywords ([spam-score.ts](src/lib/spam-score.ts)) and `blocked_attachment` a
+filename. Widening it to "no mail content is stored" would make it false.
 
 [`/contact`](src/app/contact/page.tsx) is the other public page: contact details, a
 help form, and the **FAQ that used to sit on `/`** — moved there with its `FAQPage`
@@ -295,7 +380,10 @@ JSON-LD, since that data has to mirror the page it is on. Its form posts to
 so it reuses the send pipeline's guards in the same order — body cap, honeypot + fill
 time, strict `zod` contract, content score, then two 60s `claimSubmission()` claims
 (one per client IP → `429`, one per body → `200 { duplicate: true }`). A send failure
-releases **both**, so a retry is neither blocked nor swallowed. It writes no `SendLog`
+releases **both**, so a retry is neither blocked nor swallowed. It takes **text only** —
+no file input, `readLimitedBody(req)` on its default 500KB cap with file parts dropped —
+because the one route a stranger can make us mail from is the wrong place to accept
+uploads. It writes no `SendLog`
 row: that collection is one row per *app* send and has no `appId`/`userId` to use here.
 
 Titles come from the `%s · Mailer by satz` template; the three public pages set a
@@ -340,6 +428,39 @@ reason as middleware. [CodeBlock](src/components/CodeBlock.tsx) sits in `compone
 rather than under `docs/` now that both the public docs and the dashboard render it.
 Import via the `@/*` → `src/*` alias.
 
+**Registration is its own page, and an app row is one action at a time.**
+[/dashboard/register](src/app/dashboard/register/page.tsx) → `RegisterApp` replaced the card
+that used to sit above the app list, because the three optional settings were only reachable
+*after* creation from the row's menu, so most apps never got them; the register page offers
+every one before the key exists, which is also why `POST /api/apps` now accepts `spamGuard`,
+`autoResponder` and `attachments` (through the same parsers PATCH uses, so a setting saved at
+registration is validated exactly like one edited later). Its sections are all on one page
+rather than one-at-a-time behind a Next button: the flow is linear but not sequential, and
+an owner who wants only the defaults should be able to see that the rest is optional and
+scroll past it. The row itself now carries a single **Actions** `<select>` that becomes
+**Cancel** while a panel is open — "only one open" is a property of the state's shape (one
+`action`, one `draft`) rather than something eight buttons each had to remember. A newly
+issued key renders **inside its own row** (`secretCard`), not in a card at the top above
+whichever app you were not looking at.
+
+**The activity panel is always on, and its rows live in a modal**
+([ActivityPanel](src/app/dashboard/ActivityPanel.tsx) →
+[ActivityModal](src/app/dashboard/ActivityModal.tsx)). "Did my form work" is the question an
+owner arrives with, so the four counts are rendered unprompted at the bottom of every row
+that has a key — and only those: before the destination is confirmed nothing could have been
+sent. Nothing polls (a send happens whenever a visitor submits, so any interval would be a
+guess); there is a refresh button instead. The table moved behind **More info** into a
+dialog because filters and an export need room the row hasn't got, and it is `createPortal`ed
+to `body` for two reasons: the `@media print` block that *is* the PDF export works by hiding
+every other child of `body`, and a fixed backdrop nested in the row would be at the mercy of
+its `overflow`. `GET /api/apps/[id]/logs` gained `from`/`to`/`status` filters and `all=1`,
+capped at `EXPORT_MAX_ROWS` with a `truncated` flag the dialog surfaces — an unbounded read
+of a collection that only grows is the thing being avoided, and a silently partial export is
+worse than a refused one. `counts` and `today` stay whole-app figures even when the rows are
+filtered, because they are the panel's headline rather than the table's summary. CSV is built
+in the browser (quoted, and formula-injection prefixes escaped); PDF is the browser's own
+"Save as PDF", which is why no PDF dependency was added.
+
 **Password reset** ([forgot-password](src/app/api/auth/forgot-password/route.ts) →
 [reset-password](src/app/api/auth/reset-password/route.ts)): a random token is
 emailed in plaintext through the same mailer, only its sha256 hash plus a 30-minute
@@ -355,8 +476,8 @@ always returns the same response whether or not the email exists.
   promoted directly in the DB — after that the admin Users page can promote/demote.
 - **App** — `userId`, `websiteName`, `destinationEmail` (any provider),
   `destinationVerified` + `destinationOtp*` (destination OTP), `templateId`
-  (design enum, default `card`), `fields` (`[{ name, required }]`, default
-  name/email/phone/message), `spamGuard` (`{ honeypotField, timingField,
+  (design enum, default `card`), `fields` (`[{ id, name }]` — posted key plus row label,
+  default name/email/phone/message), `spamGuard` (`{ honeypotField, timingField,
   minSubmitSeconds }`, all off), `autoResponder` (`{ enabled, subject, message }`,
   off), `attachments` (`{ enabled, maxFiles }`, off), `secretKeyHash`. The last three
   default to "off", which is why they need no

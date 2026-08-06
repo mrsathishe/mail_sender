@@ -8,7 +8,6 @@
 //
 // Pure and free of Node built-ins, so the dashboard renders these in the browser.
 
-import { titleize } from "./flatten";
 import type { AppField } from "./fields";
 import type { SpamGuard } from "./bot-guard";
 import { ACCEPT_ATTRIBUTE, type AttachmentConfig } from "./attachments";
@@ -24,9 +23,9 @@ export type SnippetInput = {
 };
 
 /**
- * Which HTML control a declared field wants. A guess from the name, because that is all
- * we have — the contract stores no type — but a wrong guess is cosmetic: the field still
- * posts under the same name, so the submission is valid either way.
+ * What kind of value a declared field probably holds, guessed from its id and label
+ * because the contract stores no type. Only used to pick a plausible sample value for
+ * the cURL body, so a wrong guess is cosmetic — the field still posts under its id.
  */
 type Control = "text" | "email" | "tel" | "url" | "number" | "textarea";
 
@@ -68,133 +67,78 @@ function sampleFor(name: string): string {
   }
 }
 
-/** Escape for an HTML attribute value — a field name could carry a quote or a bracket. */
-function attr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
 /** Escape for a single-quoted shell argument, which is how cURL takes JSON. */
 function shellSingleQuoted(value: string): string {
   return value.replace(/'/g, `'\\''`);
 }
 
-function htmlControl(field: AppField): string {
-  const name = attr(field.name);
-  const label = attr(titleize(field.name));
-  const required = field.required ? " required" : "";
-  const control = controlFor(field.name);
-
-  if (control === "textarea") {
-    return `  <label for="f-${name}">${label}</label>\n` +
-      `  <textarea id="f-${name}" name="${name}" rows="6"${required}></textarea>`;
-  }
-  return `  <label for="f-${name}">${label}</label>\n` +
-    `  <input id="f-${name}" name="${name}" type="${control}"${required} />`;
-}
-
 export function integrationSnippets(input: SnippetInput): Snippet[] {
   const { endpoint, fields, spamGuard, attachments } = input;
-  const controls = fields.map(htmlControl).join("\n\n");
 
-  const honeypot = spamGuard.honeypotField
-    ? `\n\n  <!-- Honeypot: a person never sees it, so anything that fills it is a bot.\n` +
-      `       Leave the value empty. Not in your field list on purpose. -->\n` +
-      `  <input type="text" name="${attr(spamGuard.honeypotField)}" value="" tabindex="-1"\n` +
-      `         autocomplete="off" aria-hidden="true"\n` +
-      `         style="position:absolute;left:-9999px" />`
-    : "";
+  // Extra inputs this app's form needs that aren't declared fields. They used to be
+  // shown in a generated `<form>`; the markup is the owner's own, so what is left is
+  // naming them here — the guards reject a submission that arrives without them.
+  const guardNotes = [
+    spamGuard.honeypotField
+      ? `// Your form also needs a hidden honeypot input named "${spamGuard.honeypotField}",\n` +
+        `// left empty and off-screen — anything that fills it is refused as a bot.\n`
+      : "",
+    spamGuard.timingField
+      ? `// ...and a hidden input named "${spamGuard.timingField}" carrying how long the form\n` +
+        `// has been on screen in ms; faster than ${spamGuard.minSubmitSeconds}s is refused.\n`
+      : "",
+    attachments.enabled
+      ? `// Files: add <input name="files" type="file" multiple accept="${ACCEPT_ATTRIBUTE}" />\n` +
+        `// — up to ${attachments.maxFiles}. FormData below carries them as they are.\n`
+      : "",
+  ].join("");
 
-  const timing = spamGuard.timingField
-    ? `\n\n  <!-- How long the form has been on screen, in milliseconds. Anything faster\n` +
-      `       than ${spamGuard.minSubmitSeconds}s is refused with 422 too_fast. -->\n` +
-      `  <input type="hidden" id="f-elapsed" name="${attr(spamGuard.timingField)}" value="0" />`
-    : "";
-
-  // One submit handler, timing or not: it posts with fetch so the visitor stays on the
-  // page, which is what lets the forwarding route answer with JSON instead of a redirect.
-  const script =
-    `\n<script>\n` +
-    `  const form = document.getElementById("contact");\n` +
-    `  const statusEl = document.getElementById("form-status");\n` +
-    (spamGuard.timingField ? `  const shownAt = Date.now();\n` : "") +
-    `  form.addEventListener("submit", async (event) => {\n` +
-    `    event.preventDefault();\n` +
+  // The one call, wherever it runs. A browser handler, a framework's onSubmit and your
+  // own server all send the identical request and read the identical reply, so there is
+  // nothing here to fork on: `new FormData(form)` already carries any file the form has,
+  // and there is a single endpoint whether or not this app accepts uploads.
+  const call =
+    `// Paste into your form's submit handler.\n` +
+    `//\n` +
+    `// Anyone who opens the page can read this key. What bounds it is the field list\n` +
+    `// this app declares, its confirmed destination and its daily send limit.\n` +
+    guardNotes +
+    `const SECRET_KEY = "YOUR_SECRET_KEY";\n\n` +
+    `const form = document.getElementById("contact"); // your form's id\n` +
+    (spamGuard.timingField ? `const shownAt = Date.now();\n` : "") +
+    `\n` +
+    `form.addEventListener("submit", async (event) => {\n` +
+    `  event.preventDefault();\n` +
     (spamGuard.timingField
-      ? `    document.getElementById("f-elapsed").value = Date.now() - shownAt;\n`
+      ? `  form.elements["${spamGuard.timingField}"].value = Date.now() - shownAt;\n\n`
       : "") +
-    `    statusEl.textContent = "Sending…";\n` +
-    `    const res = await fetch(form.action, { method: "POST", body: new FormData(form) });\n` +
-    `    // Your route answers with JSON, never a redirect, so this page decides what\n` +
-    `    // happens next — a message here, or location.assign("/thanks") instead.\n` +
-    `    statusEl.textContent = res.ok\n` +
-    `      ? "Thanks — your message is on its way."\n` +
-    `      : "Sorry, that didn't send. Please try again.";\n` +
-    `    if (res.ok) form.reset();\n` +
-    `  });\n` +
-    `</script>`;
+    `  const res = await fetch("${endpoint}", {\n` +
+    `    method: "POST",\n` +
+    `    headers: { "Authorization": \`Bearer \${SECRET_KEY}\` },\n` +
+    `    // Carries every field the form has, files included. Never set Content-Type by\n` +
+    `    // hand here — fetch has to add the multipart boundary itself.\n` +
+    `    body: new FormData(form),\n` +
+    `  });\n\n` +
+    `  // Always JSON plus a status, never a redirect, so this page decides what happens\n` +
+    `  // next — a message of your own, or location.assign("/thanks") instead.\n` +
+    `  if (res.ok) {\n` +
+    `    form.reset();\n` +
+    `    alert("Thanks — your message is on its way.");\n` +
+    `  } else {\n` +
+    `    alert("Sorry, that didn't send. Please try again.");\n` +
+    `  }\n` +
+    `});`;
 
-  const fileInput = attachments.enabled
-    ? `\n\n  <!-- Up to ${attachments.maxFiles} file(s); the whole request must stay under the\n` +
-      `       size limit shown in the docs. -->\n` +
-      `  <input name="files" type="file" multiple accept="${ACCEPT_ATTRIBUTE}" />`
-    : "";
-
-  // `enctype` only matters when there is a file to carry.
-  const enctype = attachments.enabled ? ` enctype="multipart/form-data"` : "";
-
-  const html =
-    `<!-- Posts to a route on YOUR site, never to us: the secret key must not be in\n` +
-    `     the browser, and a plain form can't send an Authorization header anyway. -->\n` +
-    `<form id="contact" method="POST" action="/api/contact"${enctype}>\n` +
-    `${controls}${fileInput}${honeypot}${timing}\n\n` +
-    `  <button type="submit">Send</button>\n` +
-    `  <p id="form-status" role="status"></p>\n` +
-    `</form>${script}`;
-
-  // The forwarding route. With attachments the incoming FormData is passed straight
-  // through — re-serialising it would drop the files, and fetch sets the multipart
-  // boundary itself.
-  const route = attachments.enabled
-    ? `// app/api/contact/route.js — runs on your server, where the key is safe.\n` +
-      `export async function POST(request) {\n` +
-      `  const form = await request.formData();\n\n` +
-      `  // Forwarded as-is: text fields and files both survive. Do not set\n` +
-      `  // Content-Type here — fetch has to add the multipart boundary itself.\n` +
-      `  const res = await fetch("${endpoint}", {\n` +
-      `    method: "POST",\n` +
-      `    headers: { "Authorization": \`Bearer \${process.env.MAIL_SENDER_KEY}\` },\n` +
-      `    body: form,\n` +
-      `  });\n\n` +
-      `  // JSON in, JSON out — no redirect. Pass our status through so your page can\n` +
-      `  // tell success from failure and show whatever it likes.\n` +
-      `  const data = await res.json().catch(() => ({}));\n` +
-      `  return Response.json(data, { status: res.status });\n` +
-      `}`
-    : `// app/api/contact/route.js — runs on your server, where the key is safe.\n` +
-      `export async function POST(request) {\n` +
-      `  const form = await request.formData();\n\n` +
-      `  const res = await fetch("${endpoint}", {\n` +
-      `    method: "POST",\n` +
-      `    headers: {\n` +
-      `      "Authorization": \`Bearer \${process.env.MAIL_SENDER_KEY}\`,\n` +
-      `      "Content-Type": "application/json",\n` +
-      `    },\n` +
-      `    body: JSON.stringify(Object.fromEntries(form)),\n` +
-      `  });\n\n` +
-      `  // JSON in, JSON out — no redirect. Pass our status through so your page can\n` +
-      `  // tell success from failure and show whatever it likes.\n` +
-      `  const data = await res.json().catch(() => ({}));\n` +
-      `  return Response.json(data, { status: res.status });\n` +
-      `}`;
-
+  // Keyed by id: the id is what the request carries, the label only names the row in
+  // the email that arrives.
   const sample: Record<string, string> = {};
-  for (const field of fields) sample[field.name] = sampleFor(field.name);
+  for (const field of fields) sample[field.id] = sampleFor(`${field.id} ${field.name}`);
 
   const curl = attachments.enabled
     ? `curl -X POST ${endpoint} \\\n` +
       `  -H "Authorization: Bearer YOUR_SECRET_KEY" \\\n` +
       fields
-        .map((f) => `  -F "${f.name}=${shellSingleQuoted(sample[f.name])}" \\\n`)
+        .map((f) => `  -F "${f.id}=${shellSingleQuoted(sample[f.id])}" \\\n`)
         .join("") +
       `  -F "files=@/path/to/file.pdf"`
     : `curl -X POST ${endpoint} \\\n` +
@@ -202,27 +146,8 @@ export function integrationSnippets(input: SnippetInput): Snippet[] {
       `  -H "Content-Type: application/json" \\\n` +
       `  -d '${shellSingleQuoted(JSON.stringify(sample))}'`;
 
-  const fetchSample =
-    `// Server-side only — keep the key in an environment variable.\n` +
-    `await fetch("${endpoint}", {\n` +
-    `  method: "POST",\n` +
-    `  headers: {\n` +
-    `    "Authorization": \`Bearer \${process.env.MAIL_SENDER_KEY}\`,\n` +
-    `    "Content-Type": "application/json",\n` +
-    `  },\n` +
-    `  body: JSON.stringify(${JSON.stringify(sample, null, 4).replace(/\n/g, "\n  ")}),\n` +
-    `});`;
-
-  const snippets: Snippet[] = [
-    { id: "html", label: "1. The form, on your site", code: html },
-    { id: "route", label: "2. The route that forwards it (Next.js)", code: route },
+  return [
+    { id: "call", label: "The call that sends your form", code: call },
     { id: "curl", label: "cURL — try it from a terminal", code: curl },
   ];
-
-  // With attachments on, a JSON example would be misleading: it cannot carry a file.
-  if (!attachments.enabled) {
-    snippets.push({ id: "fetch", label: "Node.js (fetch)", code: fetchSample });
-  }
-
-  return snippets;
 }

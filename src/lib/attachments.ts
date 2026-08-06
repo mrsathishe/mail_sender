@@ -1,4 +1,4 @@
-// File attachments for the upload endpoints (SPEC §4a, §8).
+// File attachments for the send endpoint (SPEC §4a, §8).
 //
 // Opt-in per app and off by default, for the same reason the sender is always ours:
 // an app that never asked for uploads must not become a 5MB relay just because its
@@ -22,9 +22,10 @@ import type { UploadedFile } from "./body-limit";
 
 /**
  * The whole request, not one file — text fields and every file part together. Ten
- * times MAX_BODY_BYTES, which is why it lives on its own endpoint: nginx's
- * client_max_body_size is per-location, so the cheap 1m edge guard stays in front of
- * /api/v1/send while only the upload path is raised.
+ * times MAX_BODY_BYTES, and applied only to an app whose owner switched uploads on:
+ * send-endpoint.ts picks between the two caps from `enabled`, so the allowance follows
+ * the app rather than the URL. nginx's client_max_body_size on the send location is the
+ * outer bound above it and must stay above this number (deploy/nginx.conf).
  */
 export const ATTACHMENT_MAX_TOTAL_BYTES = 5 * 1024 * 1024; // 5MB
 

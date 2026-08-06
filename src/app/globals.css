@@ -13,7 +13,10 @@
   --surface-2: #fdf6cf;
   --border: #e4d9a8;
   --text: var(--black);
-  --muted: #6b6b6b;
+  /* #6b6b6b measured 4.43:1 against the cream `--bg` — under AA for body text, which the
+     two point lists on the landing page sit directly on. This passes on both surfaces
+     (5.3:1 on cream, 6.4:1 on the white card). */
+  --muted: #5f5f5f;
   --accent: var(--red);
   --accent-hover: var(--red-bright);
   --danger: var(--red);
@@ -25,7 +28,30 @@
   --btn-hover: var(--red-bright);
   --btn-text: var(--white);
 
-  --shadow: 0 6px 24px rgba(26, 26, 26, 0.1);
+  /* The donate control is the one green in the palette, and a brand-red heart is the
+     whole point of it. That rules out a saturated green fill: the red would sit at about
+     1.6:1 on it, and red-on-green is the one pair a deuteranope cannot separate at all. A
+     green *tint* with a green label keeps both the word and the heart readable instead. */
+  --donate-bg: #e9f6ee;
+  --donate-bg-hover: #d5edde;
+  --donate-border: #1b7f4d;
+  --donate-text: #14663d;
+  --donate-heart: var(--red);
+
+  /* An elevation scale, not one shadow. Depth is what makes layered surfaces read as
+     layered, and a single blur on everything flattens them back out. Two stacked shadows
+     per level — a tight contact shadow plus a wide ambient one — is what stops a card
+     looking like it is floating with nothing under it. Tinted with the brand black rather
+     than pure black, so a shadow on the cream page stays warm instead of turning grey. */
+  --elev-1: 0 1px 2px rgba(26, 26, 26, 0.05), 0 1px 3px rgba(26, 26, 26, 0.07);
+  --elev-2: 0 2px 4px rgba(26, 26, 26, 0.06), 0 4px 10px rgba(26, 26, 26, 0.08);
+  --elev-3: 0 4px 8px rgba(26, 26, 26, 0.07), 0 12px 28px rgba(26, 26, 26, 0.1);
+  --elev-4: 0 8px 16px rgba(26, 26, 26, 0.08), 0 24px 48px rgba(26, 26, 26, 0.13);
+  /* The gloss, in two parts: a lit top edge and a sheen that fades out before halfway.
+     Both are plain white at low alpha, so they read on any surface tone without
+     introducing a colour — which is why no new hue is needed to add depth. */
+  --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 52%);
   color-scheme: light;
 }
 
@@ -46,8 +72,27 @@
     --danger: #ff8072;
     --ok: #e6c86d;
     --btn-bg: #c9241f;
-    --btn-hover: #e03a2c;
-    --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    /* #e03a2c measured 4.36:1 under white label text — under AA before any gloss was
+       involved. This is the same hue held back to 5.06:1. */
+    --btn-hover: #cf3325;
+    /* The same tint-and-outline idea inverted: a green-tinted dark surface, and the heart
+       moves to the lifted red the rest of dark mode uses — the brand red is unreadable
+       on any dark ground. */
+    --donate-bg: #1b2c20;
+    --donate-bg-hover: #243b2b;
+    --donate-border: #4ba86f;
+    --donate-text: #7fd3a0;
+    --donate-heart: #ff8072;
+    /* Deeper and more opaque: on a dark base a shadow has less tonal room to work in, so
+       the same alphas as light mode would be invisible. */
+    --elev-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --elev-2: 0 2px 4px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.35);
+    --elev-3: 0 4px 8px rgba(0, 0, 0, 0.5), 0 12px 28px rgba(0, 0, 0, 0.4);
+    --elev-4: 0 8px 16px rgba(0, 0, 0, 0.55), 0 24px 48px rgba(0, 0, 0, 0.45);
+    /* Far weaker. A white highlight at light-mode strength on a dark surface reads as a
+       rendering fault rather than a lit edge. */
+    --edge-lit: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    --gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 52%);
     color-scheme: dark;
   }
 }
@@ -197,6 +242,22 @@ a:hover {
 .site-nav a {
   font-weight: 600;
 }
+/* The current page. Selected on `aria-current` rather than a class so the visual state
+   and the announced state come from one source. */
+.site-nav a[aria-current="page"] {
+  position: relative;
+  color: var(--accent);
+}
+.site-nav a[aria-current="page"]:not(.nav-cta)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.5rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
 .site-nav button {
   width: auto;
   padding: 0.4rem 0.85rem;
@@ -219,6 +280,12 @@ a:hover {
 .nav-cta:hover {
   background: var(--btn-hover);
   text-decoration: none;
+}
+/* The CTA is already a filled button, so an underline beneath it would read as a second
+   element. A ring says the same thing inside the shape it already has — the inner stop is
+   the page background, so the ring reads as detached from the fill. */
+.nav-cta[aria-current="page"] {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--btn-bg);
 }
 .nav-toggle {
   display: none;
@@ -287,14 +354,15 @@ a:hover {
 }
 
 .card {
-  background: var(--card);
+  background-image: var(--gloss);
+  background-color: var(--card);
   border: 1px solid var(--border);
   border-top: 4px solid var(--accent);
   border-radius: 12px;
   padding: 2rem;
   width: 100%;
   max-width: 420px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--elev-2), var(--edge-lit);
 }
 /* Dashboard cards are full-width panels, not centred auth forms. */
 .card-wide {
@@ -399,24 +467,52 @@ button:disabled {
   border-radius: 8px;
   font-weight: 700;
   font-size: 1rem;
+  transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.15s ease;
 }
 .btn-primary {
-  background: var(--btn-bg);
+  background-color: var(--btn-bg);
+  /* A 1px lit edge plus a sheen kept under 12% and confined to the top half. Stronger
+     than that lightens the fill enough to drop white label text under 4.5:1, which is the
+     ceiling this effect has to live inside. */
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0) 55%
+  );
   color: var(--btn-text);
+  box-shadow: var(--elev-2), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .btn-primary:hover {
-  background: var(--btn-hover);
+  background-color: var(--btn-hover);
   color: var(--btn-text);
   text-decoration: none;
+  box-shadow: var(--elev-3), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+/* Pressed reads as pressed: the lift goes away and the shadow moves inside. */
+.btn-primary:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(26, 26, 26, 0.3);
 }
 .btn-secondary {
   border: 1px solid var(--accent);
   color: var(--accent);
+  background-image: var(--gloss);
+  background-color: var(--card);
+  box-shadow: var(--elev-1);
 }
 .btn-secondary:hover {
-  background: var(--accent);
+  /* `--btn-bg`, not `--accent`. The two exist precisely because `--accent` is tuned for
+     text *on* the page and dark mode lifts it to a pale salmon — as a fill under white
+     text that measures 2.45:1. `--btn-bg` is the pair tuned for this direction. */
+  background-color: var(--btn-bg);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0) 55%
+  );
   color: var(--btn-text);
   text-decoration: none;
+  box-shadow: var(--elev-2);
 }
 
 .row {
@@ -478,9 +574,19 @@ button:disabled {
 .landing {
   max-width: 960px;
 }
+/* Two soft brand-coloured pools behind the hero rather than a flat band: the page
+   background is a single cream, so without something behind it the hero reads as the
+   top of a document instead of the top of a product. Kept at low alpha and in
+   `background-image` only, so the text contrast tokens above still hold and dark mode
+   needs no second rule — the same two hues simply sit on a dark base. */
 .hero {
+  position: relative;
   text-align: center;
-  padding: 2.5rem 0 3rem;
+  padding: 3rem 1.5rem 3.5rem;
+  border-radius: 28px;
+  background-image:
+    radial-gradient(60% 70% at 50% 0%, rgba(247, 216, 127, 0.5), transparent 70%),
+    radial-gradient(45% 60% at 82% 12%, rgba(190, 26, 26, 0.13), transparent 72%);
 }
 .hero .logo-mark {
   margin: 0 auto 1rem;
@@ -504,15 +610,20 @@ button:disabled {
 }
 .hero h1 {
   font-size: clamp(1.9rem, 5vw, 3rem);
-  line-height: 1.15;
+  line-height: 1.12;
+  /* Display sizes set at the body's default tracking look loose; pulling it in is
+     most of what separates a headline from a large paragraph. */
+  letter-spacing: -0.02em;
   margin: 0 0 1rem;
   color: var(--text);
+  text-wrap: balance;
 }
 .hero-lede {
   max-width: 42rem;
   margin: 0 auto 1.75rem;
   font-size: clamp(1rem, 2.2vw, 1.2rem);
   color: var(--muted);
+  text-wrap: pretty;
 }
 .hero-actions {
   display: flex;
@@ -521,12 +632,22 @@ button:disabled {
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
-/* The price is the second question every visitor has; say it in the hero. */
+/* The price is the second question every visitor has; say it in the hero. A pill
+   rather than a line of red text, so it reads as a fact about the product instead of
+   a warning. */
 .hero-price {
+  display: inline-block;
   margin: 0.5rem 0 0;
-  font-size: 0.9rem;
-  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-image: var(--gloss);
+  background-color: var(--card);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--accent);
+  box-shadow: var(--elev-2), var(--edge-lit);
 }
 
 /* Sections stacked with margin alone read as one wall of text — a rule plus
@@ -556,9 +677,17 @@ button:disabled {
   background: currentColor;
 }
 .landing-section > h2 {
-  font-size: 1.5rem;
-  margin: 0 0 1.25rem;
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 1.5rem;
   color: var(--text);
+}
+/* No heading in this block, so the eyebrow takes over the h2's bottom margin — without
+   it the content butts straight up under the label and the section reads as cramped
+   next to the others. */
+.landing-section-unheaded > .section-label {
+  margin-bottom: 1.5rem;
 }
 .landing-section > p {
   margin: 1rem 0 0;
@@ -580,11 +709,76 @@ button:disabled {
   gap: 1rem;
 }
 .feature-card {
-  background: var(--card);
+  /* Three layers: the gloss sheen, then the warm wash from `--surface-2` back to the card,
+     over the card fill. `--surface-2` is already the page's second warm tone, so this adds
+     depth without adding a colour. */
+  background-image: var(--gloss), linear-gradient(160deg, var(--surface-2), var(--card) 55%);
+  background-color: var(--card);
   border: 1px solid var(--border);
   border-left: 4px solid var(--gold);
-  border-radius: 10px;
-  padding: 1.25rem;
+  border-radius: 12px;
+  padding: 1.35rem;
+  box-shadow: var(--elev-1), var(--edge-lit);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-3), var(--edge-lit);
+}
+
+/* What you get: a marker per point, two columns where there is room. The marker is an
+   inline SVG in the markup rather than a `content:` glyph — see the note at TickIcon in
+   page.tsx — so these rules only size and tint the chip it sits in. */
+.check-list,
+.limits-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+}
+.check-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0.85rem 1.75rem;
+}
+.check-list li,
+.limits-list li {
+  display: grid;
+  /* Fixed first track, so a wrapped second line aligns under the text and not under
+     the marker. */
+  grid-template-columns: 1.4rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+.point-icon {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0.22rem;
+  border-radius: 50%;
+  /* Nudged down to sit on the first line's optical centre rather than its cap height. */
+  margin-top: 0.1rem;
+}
+.check-list .point-icon {
+  /* Dark ink on the pale gold: the gold is a background tone in this palette, never a
+     text colour, and it fails contrast used the other way round. Fixed rather than
+     tokenised because it is the same chip in both themes. */
+  background: var(--gold);
+  color: var(--black);
+}
+.limits-list li {
+  margin-bottom: 0.7rem;
+}
+.limits-list .point-icon {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+/* A point leads with its own name, so the lead-in takes the page's text colour while
+   the explanation stays muted — the same two-tone the feature cards get from
+   `.feature-card h3` / `p`. */
+.check-list strong,
+.limits-list strong {
+  color: var(--text);
 }
 
 /* auto-fill, not auto-fit: with a single site listed, auto-fit stretches the one
@@ -601,10 +795,17 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  background: var(--card);
+  background-image: var(--gloss);
+  background-color: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 1rem 1.1rem;
+  box-shadow: var(--elev-1), var(--edge-lit);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.used-by-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-3), var(--edge-lit);
 }
 .used-by-card a {
   font-size: 0.95rem;
@@ -634,48 +835,81 @@ button:disabled {
   font-size: 0.8rem;
 }
 
-.limits-list {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--muted);
-}
-.limits-list li {
-  margin-bottom: 0.6rem;
-}
+/* Superseded: both point lists are styled together up beside `.check-list`, so the
+   markers and the two-tone lead-in cannot drift apart. */
 
 .faq-list {
   margin: 0;
+  display: grid;
+  /* One card per row. Answers vary a lot in length, so a two-column grid left ragged
+     gaps beside the short ones, and an FAQ is read straight down in order anyway. */
+  gap: 1rem;
+}
+/* One card per question. A plain dt/dd run reads as a transcript; carding each pair
+   makes the list scannable, which is the whole job of an FAQ. The wrapper div is what
+   `dl` allows between the terms, and it is the grid item. */
+.faq-item {
+  background-image: var(--gloss);
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  border-radius: 12px;
+  padding: 1.2rem 1.3rem;
+  box-shadow: var(--elev-1), var(--edge-lit);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.faq-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--elev-3), var(--edge-lit);
 }
 .faq-list dt {
   font-weight: 700;
-  margin-top: 1.25rem;
-}
-.faq-list dt:first-child {
-  margin-top: 0;
+  font-size: 1.02rem;
+  /* The margin that separated one question from the next lives on the card now. */
+  margin: 0;
+  color: var(--text);
+  text-wrap: balance;
 }
 .faq-list dd {
-  margin: 0.35rem 0 0;
+  margin: 0.45rem 0 0;
+  /* The card is full width now, so the measure has to be capped here instead — a line
+     running the whole 880px shell is past the point where the eye finds the next one. */
+  max-width: 68ch;
   color: var(--muted);
+  font-size: 0.94rem;
+  text-wrap: pretty;
 }
 
 .landing-cta {
   text-align: center;
-  background: var(--card);
+  /* The one place the brand red leads. Everything above it is a warm cream surface, so
+     the CTA needs a different material to read as the end of the page rather than one
+     more section — hence a tinted wash instead of the plain card fill. */
+  background-image:
+    var(--gloss),
+    radial-gradient(70% 120% at 50% 0%, rgba(190, 26, 26, 0.1), transparent 70%),
+    linear-gradient(var(--surface-2), var(--card));
+  background-color: var(--card);
   border: 1px solid var(--border);
   border-top: 4px solid var(--accent);
-  border-radius: 12px;
-  padding: 2rem 1.5rem;
+  border-radius: 16px;
+  padding: 2.75rem 1.5rem;
   /* The last .landing-section already contributes 3rem of bottom padding. */
   margin: 1rem 0 1rem;
+  /* The highest surface on the page, so the top of the elevation scale. */
+  box-shadow: var(--elev-4), var(--edge-lit);
 }
 .landing-cta h2 {
   margin: 0 0 0.5rem;
-  font-size: 1.4rem;
+  font-size: clamp(1.4rem, 3vw, 1.75rem);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 .landing-cta p {
   margin: 0 auto 1.5rem;
   max-width: 34rem;
   color: var(--muted);
+  text-wrap: pretty;
 }
 
 /* ── Contact page ────────────────────────────────────────────────────────── */
@@ -787,6 +1021,24 @@ button:disabled {
   gap: 0.4rem;
   flex-shrink: 0;
 }
+/* One menu instead of a stack of buttons. Sized like the buttons it replaced so a row
+   whose destination is unconfirmed — menu plus "Enter code" — still lines up. */
+.action-select {
+  width: auto;
+  min-width: 11rem;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.action-select:hover:not(:disabled) {
+  border-color: var(--accent);
+}
 
 .form-section {
   margin: 1.75rem 0 0.75rem;
@@ -795,6 +1047,92 @@ button:disabled {
 }
 .field-help {
   margin: -0.5rem 0 1rem;
+}
+
+/* ── Register-an-app flow ────────────────────────────────────────────────── */
+/* The dashboard's entry point to it: a card whose whole content is the pitch and the
+   link, so it reads as one action rather than as a collapsed form. */
+.register-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.register-cta h2 {
+  margin-bottom: 0.3rem;
+}
+.register-cta p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.register-cta .btn-primary {
+  flex: 0 0 auto;
+}
+
+/* Every section is on the page at once, so what has to be visible is where one ends and
+   the next begins — a numbered heading plus a rule, rather than a step counter. */
+.reg-section {
+  padding-top: 1.5rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+.reg-section:first-of-type {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+.reg-section > h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: var(--text);
+}
+/* Says "skip me" at a glance, which is the whole reason these three sections are visible
+   rather than hidden behind a Next button. */
+.reg-optional {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+/* Leads a section rather than trailing an input, so unlike .field-help it pulls nothing up. */
+.step-note {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+}
+.reg-submit {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+.reg-submit button {
+  width: auto;
+  min-width: 10rem;
+}
+
+/* The review before the key is issued: label above value, so a long destination or field
+   list wraps without dragging the label away from it. */
+.review-list {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.review-list dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.review-list dd {
+  margin: 0.15rem 0 0.85rem;
+  word-break: break-word;
 }
 
 /* ── Fields editor ───────────────────────────────────────────────────────── */
@@ -819,29 +1157,39 @@ button:disabled {
   gap: 0.6rem;
   margin-bottom: 0.5rem;
 }
-.field-row-name {
-  flex: 1 1 auto;
+/* Column captions: which box is the posted id and which is the email label. Hidden from
+   assistive tech (each input has its own visually-hidden label) so the pairing isn't
+   announced twice. */
+.field-row-head {
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.field-row-head span {
+  flex: 1 1 0;
   min-width: 0;
 }
-.field-row-name input {
+/* Reserves the width the Remove button takes on the rows below, so the two captions
+   stay over their own inputs. */
+.field-row-head::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 5.2rem;
+}
+.field-row-id,
+.field-row-label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.field-row-id input {
   margin: 0;
+  /* Monospace on the id only: it is a key that gets typed into markup, while the label
+     beside it is prose. */
   font-family: ui-monospace, monospace;
 }
-.field-row-required {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex: 0 0 auto;
+.field-row-label input {
   margin: 0;
-  font-size: 0.85rem;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.field-row-required input {
-  width: auto;
-  margin: 0;
-  accent-color: var(--btn-bg);
 }
 .field-remove {
   width: auto;
@@ -891,27 +1239,34 @@ button:disabled {
   padding: 0;
   border: 0;
 }
+/* The row owns the card, not the label, because the Preview button sits beside the
+   label and its panel spans underneath both. */
+.design-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.design-option-row:hover {
+  border-color: var(--accent);
+}
+.design-option-row.selected {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
 .design-option {
   display: flex;
   align-items: flex-start;
   gap: 0.6rem;
-  width: 100%;
   margin: 0;
   padding: 0.6rem 0.7rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
   color: var(--text);
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-}
-.design-option:hover {
-  border-color: var(--accent);
-}
-.design-option.selected {
-  border-color: var(--accent);
-  background: var(--surface-2);
 }
 .design-option input {
   width: auto;
@@ -932,20 +1287,14 @@ button:disabled {
   line-height: 1.35;
 }
 
-.design-preview {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  overflow: hidden;
-}
 /* Collapsed by default: a full-height email preview would otherwise push the rest
    of the form off a phone screen. */
 .design-preview-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
+  gap: 0.5rem;
+  width: auto;
+  margin: 0;
   padding: 0.6rem 0.75rem;
   background: transparent;
   border: 0;
@@ -956,6 +1305,7 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   text-align: left;
+  white-space: nowrap;
 }
 .design-preview-toggle:hover {
   background: var(--surface-2);
@@ -965,7 +1315,10 @@ button:disabled {
   line-height: 1;
   color: var(--accent);
 }
+/* Full-bleed across the row so the 600px-wide mail design is never squeezed into
+   half a column. */
 .design-preview-body {
+  grid-column: 1 / -1;
   border-top: 1px solid var(--border);
 }
 .design-preview-body iframe {
@@ -1011,6 +1364,46 @@ button:disabled {
 }
 /* Per-app activity (SPEC §4f): the same stat cards and table as the admin view, one
    step smaller because they sit inside an app row rather than on their own page. */
+.activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.activity-head h4 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+/* Square, icon-only: it sits at the top-right corner of a panel, where a labelled
+   button would compete with the heading beside it. The name is on aria-label. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.icon-btn:disabled {
+  opacity: 0.5;
+}
 .activity-panel .stat-grid {
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 0.6rem;
@@ -1075,6 +1468,100 @@ button:disabled {
   font-size: 0.85rem;
   word-break: break-all;
   margin: 0.5rem 0 1rem;
+}
+/* A key issued inside an app row, rather than in a card at the top of the page above
+   whichever app you were not looking at. */
+.secret-issued {
+  margin-top: 0.9rem;
+  padding: 0.9rem;
+  border: 1px dashed var(--red-bright);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.secret-issued h4 {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+}
+.secret-issued .regen-btn {
+  width: auto;
+}
+
+/* An (i) that holds the detail a panel would otherwise spend four paragraphs on.
+   Hover or keyboard focus opens it — `:focus-within` on the wrapper is why this needs
+   no JavaScript. */
+.input-with-tip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.input-with-tip input {
+  margin: 0;
+}
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.info-tip-btn {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+}
+.info-tip-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+.info-tip-body {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.4rem);
+  /* Anchored to the icon's left edge and clamped to the viewport, so a tip inside a
+     narrow app row cannot hang off the side of the page. */
+  left: 0;
+  width: max-content;
+  max-width: min(30rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.8rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+}
+.info-tip-body > span {
+  display: block;
+}
+.info-tip-body > span + span {
+  margin-top: 0.5rem;
+}
+.info-tip-body code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  background: var(--surface-2);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+}
+.info-tip:hover .info-tip-body,
+.info-tip:focus-within .info-tip-body {
+  display: block;
 }
 .muted {
   color: var(--muted);
@@ -1218,12 +1705,14 @@ button:disabled {
 
 /* ── Docs ────────────────────────────────────────────────────────────────── */
 .doc-section {
-  background: var(--card);
+  background-image: var(--gloss);
+  background-color: var(--card);
   border: 1px solid var(--border);
   border-left: 4px solid var(--gold);
   border-radius: 10px;
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.25rem;
+  box-shadow: var(--elev-1), var(--edge-lit);
 }
 .doc-section h2 {
   margin: 0 0 0.75rem;
@@ -1239,6 +1728,12 @@ button:disabled {
   background: var(--surface-2);
   padding: 0.1rem 0.35rem;
   border-radius: 5px;
+}
+/* Inline links get a little room either side. This prose is dense with them (dashboard,
+   contact address) and with no underline at rest they otherwise read as part of the word
+   they touch. Padding rather than margin, so the underline on hover covers the gap too. */
+.doc-section a {
+  padding: 0 0.12rem;
 }
 .doc-section pre code {
   background: none;
@@ -1263,6 +1758,10 @@ button:disabled {
 }
 .code-block {
   position: relative;
+  /* A code block butting straight against the next paragraph read as part of it. The
+     margin lives on the wrapper, not the `pre`, so the copy button stays anchored to
+     the block's own corner. */
+  margin-bottom: 1.25rem;
 }
 .code-block pre {
   background: var(--black);
@@ -1274,6 +1773,10 @@ button:disabled {
   font-size: 0.82rem;
   line-height: 1.5;
   margin: 0;
+}
+.code-block pre code
+{
+  background: none;
 }
 .code-block .copy-btn {
   position: absolute;
@@ -1344,15 +1847,169 @@ button:disabled {
   margin: 0.5rem 0 0;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
-
-/* The preview sits beside the options only when there is room for both. */
-@media (min-width: 780px) {
-  .design-picker {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-    align-items: start;
-  }
+/* ── Donate ──────────────────────────────────────────────────────────────── */
+/* The trigger, wherever it appears. `button.donate-trigger` matches the specificity of
+   `.site-nav button` and this block sits later in the file, which is what lets the nav's
+   outlined red treatment give way to the green one. */
+button.donate-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: auto;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--donate-border);
+  border-radius: 8px;
+  background: var(--donate-bg);
+  color: var(--donate-text);
+  font-size: 0.9rem;
+  font-weight: 700;
 }
+/* Deepens the tint rather than flipping to a fill, which is the one hover the red heart
+   survives — see the `--donate-*` tokens. */
+button.donate-trigger:hover {
+  background: var(--donate-bg-hover);
+  color: var(--donate-text);
+}
+.donate-heart {
+  flex: none;
+  color: var(--donate-heart);
+}
+
+/* A native <dialog>, so the UA stylesheet is the starting point: it already centres a
+   modal one and paints a backdrop, and only the surface and its size are set here. */
+.donate-dialog {
+  width: min(700px, calc(100vw - 2rem));
+  max-height: calc(100vh - 3rem);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 14px;
+  background-image: var(--gloss);
+  background-color: var(--card);
+  color: var(--text);
+  box-shadow: var(--elev-4);
+  overflow: auto;
+}
+/* Tinted with the brand black rather than pure black, the same reason the elevation
+   scale is: a warm page deserves a warm dim over it. */
+.donate-dialog::backdrop {
+  background: rgba(26, 26, 26, 0.55);
+}
+/* The padding lives on an inner wrapper, not the dialog: a click on the dialog's own box
+   is what closes it, and padding would make a strip of that box sit inside the card. */
+.donate-body {
+  padding: 1.75rem;
+}
+.donate-dialog h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.15rem;
+  color: var(--accent);
+}
+.donate-intro {
+  margin: 0 0 1.5rem;
+  font-size: 0.92rem;
+}
+.donate-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+.donate-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.1rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-align: center;
+}
+.donate-option h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.donate-method {
+  margin: 0;
+  font-size: 0.82rem;
+}
+/* Bounded by *height*, not width: the two exported codes have different aspect ratios, so
+   a shared width would leave the columns at different heights. The white plate is
+   insurance for a code exported with transparency — inverted or tinted modules are the
+   one way to make a QR unreadable. */
+.donate-qr {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: 200px;
+  max-width: 100%;
+  border-radius: 8px;
+  background: var(--white);
+}
+/* Keeps the two buttons on one line even when one description wraps and the other
+   doesn't. */
+.donate-action {
+  width: 100%;
+  margin-top: auto;
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+}
+.donate-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+}
+.donate-handle-value {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.donate-copy {
+  width: auto;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.donate-copy:hover {
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-text);
+}
+.donate-note {
+  margin: 1.25rem 0 0;
+  font-size: 0.78rem;
+}
+.donate-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+/* The dashboard ask. Centred and text-limited so it reads as an aside under the app
+   panels rather than as another thing to manage. */
+.donate-card {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+.donate-card .muted {
+  max-width: 62ch;
+  margin: 0 auto 1.25rem;
+  font-size: 0.9rem;
+}
+/* The base `button` rule is full-width; this one is a trigger, not a form submit. */
+.donate-card button.donate-trigger {
+  padding: 0.6rem 1.3rem;
+  font-size: 1rem;
+  box-shadow: var(--elev-1);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 720px) {
   .site-header-inner {
@@ -1398,11 +2055,32 @@ button:disabled {
   .nav-cta {
     border-radius: 0;
   }
+  /* Stacked full-width rows here, so the underline bar would land on top of the row's own
+     bottom border. A left stripe and a tinted row carry it instead. */
+  .site-nav a[aria-current="page"]:not(.nav-cta)::after {
+    display: none;
+  }
+  .site-nav a[aria-current="page"] {
+    background: var(--surface-2);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  /* The ring is drawn outside the box, which a full-bleed row has no room for. */
+  .nav-cta[aria-current="page"] {
+    box-shadow: inset 3px 0 0 var(--bg);
+  }
 }
 
 @media (max-width: 640px) {
   .wrap {
     padding: 1.5rem 1rem;
+  }
+  /* Two codes side by side stop being legible before this width, and a stacked pair is
+     still the same choice — the layout gives way, not the content. */
+  .donate-options {
+    grid-template-columns: 1fr;
+  }
+  .donate-body {
+    padding: 1.25rem;
   }
   .card {
     padding: 1.35rem;
@@ -1433,21 +2111,29 @@ button:disabled {
     min-height: 44px;
   }
 
-  /* Field name, Required and Remove don't fit on one line at this width. */
+  /* Two boxes and Remove don't fit on one line at this width: the id takes the full
+     row, then the label and Remove share the next. The captions would sit over the
+     wrong boxes once wrapped, so they go. */
   .field-row {
     flex-wrap: wrap;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
   }
-  .field-row-name {
+  .field-row-head {
+    display: none;
+  }
+  .field-row-id {
     flex: 1 1 100%;
   }
-  .field-row-required {
+  .field-row-label {
     flex: 1 1 auto;
   }
 
   .hero {
-    padding: 1.5rem 0 2rem;
+    /* Keeps a little inset so the rounded gradient doesn't run under the text at the
+       narrow end, where `.wrap` is down to 1rem of its own. */
+    padding: 1.75rem 1rem 2.25rem;
+    border-radius: 20px;
   }
   .hero-actions .btn-primary,
   .hero-actions .btn-secondary {
@@ -1455,5 +2141,156 @@ button:disabled {
   }
   .page-header {
     margin-bottom: 1.5rem;
+  }
+
+  /* The pitch and the link stop fitting side by side; the link goes full-width under it. */
+  .register-cta {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* Same 44px target the app-row buttons take at this width. */
+  .reg-submit button {
+    min-height: 44px;
+  }
+  /* The submit and Cancel stop fitting side by side. */
+  .reg-submit {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+}
+
+/* ── Activity modal ──────────────────────────────────────────────────────────
+   The per-app log table lives here rather than in the app row (SPEC §4f): filters and
+   an export need room, and the panel's job is the four counts. Portalled to `body`, so
+   these rules own the whole viewport and the print block below can hide everything
+   else. Class names are prefixed so they cannot collide with the row's own styles. */
+.activity-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(26, 26, 26, 0.55);
+}
+.activity-modal {
+  width: min(60rem, 100%);
+  max-height: min(85vh, 48rem);
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--elev-4);
+}
+.activity-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.activity-modal-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+/* Filters and export scope are label-above-control, wrapping to a stack on a phone.
+   The global input rule sets width:100% and a 1rem bottom margin, which both have to
+   go inside a toolbar. */
+.activity-modal-filters,
+.activity-modal-export {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.activity-modal-filters label,
+.activity-modal-export label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.activity-modal-filters input,
+.activity-modal-filters select,
+.activity-modal-export select {
+  width: auto;
+  min-width: 9rem;
+  margin-bottom: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.85rem;
+}
+.activity-modal-filters .link-btn {
+  margin-bottom: 0.45rem;
+}
+.activity-modal-export {
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+.activity-modal-export .regen-btn {
+  width: auto;
+  flex-shrink: 0;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.activity-modal-export .regen-btn:hover:not(:disabled) {
+  background: var(--btn-bg);
+  border-color: var(--btn-bg);
+  color: var(--btn-text);
+}
+.log-table-wrap {
+  border-radius: 10px;
+}
+
+/* Print is the PDF export: no library, the browser's own "Save as PDF". Everything but
+   the dialog is hidden — which is only possible because the dialog is portalled to
+   `body` — and the dialog's own scroll box is unwound, since a clipped container prints
+   only the part that was on screen. */
+@media print {
+  body > *:not(.activity-modal-backdrop) {
+    display: none !important;
+  }
+  .activity-modal-backdrop {
+    position: static;
+    display: block;
+    padding: 0;
+    background: none;
+  }
+  .activity-modal {
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+  }
+  .activity-modal-filters,
+  .activity-modal-export,
+  .activity-modal-head .icon-btn,
+  .activity-modal .pager {
+    display: none !important;
+  }
+  .log-table-wrap {
+    overflow: visible;
+  }
+  .admin-table {
+    font-size: 9pt;
+  }
+  .admin-table tr {
+    break-inside: avoid;
+  }
+  .admin-table thead {
+    display: table-header-group;
   }
 }

@@ -21,16 +21,20 @@ import { renderAutoReplyHtml, renderEmailHtml } from "@/lib/templates";
 import { corsJson } from "@/lib/cors";
 import { sendMail } from "@/lib/mailer";
 
-// The submission pipeline behind both public send endpoints (SPEC §4).
+// The submission pipeline behind the public send endpoint (SPEC §4).
 //
-// It lives here rather than in a route file because there are two routes —
-// /api/v1/send and /api/v1/sendWithAttachment — and they differ in exactly three
-// places, all of them marked `opts.attachments` below. A second copy of an ordered
-// security pipeline would drift, and drift in this particular order (guards before
-// quota, dedupe before quota, body read after auth) is a security bug rather than a
-// cosmetic one. The two paths exist because nginx's client_max_body_size is
-// per-location: the 500KB endpoint keeps its cheap edge guard while only the upload
-// path is raised to 5MB.
+// One endpoint takes JSON and multipart alike. Whether file parts are kept, and whether
+// the 5MB cap applies instead of the 500KB one, is decided by the **app's** own
+// `attachments.enabled` — never by which URL was called. There used to be a second route
+// for uploads, because nginx's client_max_body_size is per-location and only that path
+// was raised; the cost was that switching the setting on was not enough on its own, since
+// the owner also had to change the URL their form posted to. The edge cap now sits on the
+// one send location (deploy/nginx.conf) and the per-app cap below is what distinguishes
+// the two allowances.
+//
+// It lives in lib/ rather than in the route file because this is the ordered part: drift
+// in this order (guards before quota, dedupe before quota, body read after auth) is a
+// security bug rather than a cosmetic one.
 
 /**
  * The label the email gives the row listing attached files. It cannot collide with a
@@ -40,25 +44,19 @@ import { sendMail } from "@/lib/mailer";
  */
 const ATTACHMENTS_ROW = "Attached files";
 
-export type SendOptions = {
-  /** Accept multipart file parts and the larger body cap. */
-  attachments: boolean;
-};
-
 function bearer(req: Request): string | null {
   const header = req.headers.get("authorization") || "";
   const [scheme, value] = header.split(" ");
   return scheme?.toLowerCase() === "bearer" && value ? value : null;
 }
 
-export async function handleSend(req: Request, opts: SendOptions) {
+export async function handleSend(req: Request) {
   // 0. Refuse an obviously oversized post before spending a DB round trip on it.
   // The real enforcement is inside readLimitedBody, which counts received bytes —
-  // content-length is only a hint the client controls (HARDENING_ROADMAP §1.3). The
-  // bound here is the most this endpoint could ever allow; the app's own cap is
-  // applied at the read, once we know whether it asked for uploads at all.
-  const outerCap = opts.attachments ? ATTACHMENT_MAX_TOTAL_BYTES : MAX_BODY_BYTES;
-  if (declaredTooLarge(req.headers, outerCap)) {
+  // content-length is only a hint the client controls (HARDENING_ROADMAP §1.3). The bound
+  // here has to be the most *any* app could allow, because whose app this is isn't known
+  // until the key is looked up; the app's own cap is applied at the read below.
+  if (declaredTooLarge(req.headers, ATTACHMENT_MAX_TOTAL_BYTES)) {
     return corsJson({ error: "payload_too_large" }, { status: 413 });
   }
 
@@ -84,15 +82,18 @@ export async function handleSend(req: Request, opts: SendOptions) {
     return corsJson({ error: "destination_unverified" }, { status: 403 });
   }
 
-  // 3. Collect the posted data, bounded in total bytes. Deliberately after auth,
-  // so an unauthenticated caller never gets us to buffer anything at all — and after
-  // the app is loaded, which is what makes the raised cap per-app rather than
-  // per-endpoint: a key belonging to an app that never enabled uploads still cannot
-  // make us buffer 5MB.
+  // 3. Collect the posted data, bounded in total bytes. Deliberately after auth, so an
+  // unauthenticated caller never gets us to buffer anything at all — and after the app is
+  // loaded, which is what makes the raised cap per-app rather than per-endpoint: a key
+  // belonging to an app that never enabled uploads still cannot make us buffer 5MB.
+  //
+  // `keepFiles` is unconditional so a file posted to an app with uploads switched off
+  // still reaches checkAttachments and is refused by name. Dropping it here instead would
+  // deliver the submission as though nothing had been attached — a silent half-failure
+  // nobody can debug, and the one this endpoint exists to remove.
   const attachmentConfig = resolveAttachmentConfig(app.attachments);
-  const cap =
-    opts.attachments && attachmentConfig.enabled ? ATTACHMENT_MAX_TOTAL_BYTES : MAX_BODY_BYTES;
-  const body = await readLimitedBody(req, { maxBytes: cap, keepFiles: opts.attachments });
+  const cap = attachmentConfig.enabled ? ATTACHMENT_MAX_TOTAL_BYTES : MAX_BODY_BYTES;
+  const body = await readLimitedBody(req, { maxBytes: cap, keepFiles: true });
   if (!body.ok) {
     const status = body.error === "payload_too_large" ? 413 : 400;
     return corsJson({ error: body.error }, { status });
@@ -180,8 +181,11 @@ export async function handleSend(req: Request, opts: SendOptions) {
   const subject = sanitizeSubject(`New submission from ${app.websiteName}`);
   const text = buildEmailBody(rendered);
   const html = renderEmailHtml(app.templateId, rendered, { websiteName: app.websiteName });
-  // Replying to the notification should reach whoever filled the form, not us.
-  const replyTo = findReplyTo(data);
+  // Replying to the notification should reach whoever filled the form, not us. Read from
+  // the submission as posted, not from `data`: that is keyed by the owner's labels now,
+  // and "Where can we reach you?" is not a name findReplyTo can recognise, while the
+  // declared id (`email`) is exactly what it looks for.
+  const replyTo = findReplyTo(split.submission);
 
   // 5. Send to the app's configured destination, logging the outcome either way.
   try {

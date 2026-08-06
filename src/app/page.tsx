@@ -42,7 +42,7 @@ const USED_BY = [
 const AUDIENCES = [
   {
     title: "Static sites",
-    body: "Astro, Hugo, Eleventy, plain HTML or a Next.js export. Nothing to host, no database, no form service to log into — the submission arrives as an email.",
+    body: "Nothing to host, no database, no form service to log into — the submission arrives as an email.",
   },
   {
     title: "Small business contact forms",
@@ -57,20 +57,20 @@ const AUDIENCES = [
 // Said plainly rather than discovered after signing up: the shared sending mailbox
 // is what makes the free tier possible, and it is not a bulk-mail relay.
 const NOT_FOR = [
-  "Newsletters, campaigns or any mail to a list of recipients — every send goes to the one confirmed destination for that app.",
-  "Transactional email for your own users (receipts, password resets). The sender is always our address, not your domain.",
-  "Marketing blasts or cold outreach. Submissions come from a form somebody filled in on your site, which is what keeps the sending domain trusted.",
-  "Attachments and file uploads. Submissions are text fields only.",
+  "Companies sending newsletters, ad campaigns or marketing blasts. Every send goes to the one confirmed destination for that app, never to a list of recipients.",
+  `Anyone who needs a large volume of mail in a day. Each app is capped at ${env.appDailySendLimit} emails a day — we will raise it for a form that genuinely needs more, but not to the point of a bulk sender.`,
+  "Products sending transactional email to their own users — receipts, password resets, alerts. The sender is always our address, not your domain.",
+  "Cold outreach. A submission has to come from a form somebody actually filled in on your site.",
 ];
 
 const FEATURES = [
   {
     title: "Any inbox, any provider",
-    body: "Gmail, Zoho, Outlook or your own domain. Mail is sent from our account and replies go to the person who filled the form, so nothing fails DMARC.",
+    body: "Gmail, Zoho, Outlook or your own domain. Mail is sent from our account and replies go to the person who filled the form.",
   },
   {
     title: "Fields you define",
-    body: `Declare exactly which fields an app accepts — the default is ${DEFAULT_FIELDS.map((f) => f.name).join(", ")}. Anything undeclared is rejected, so a leaked key can't be used to mail arbitrary content.`,
+    body: `Declare exactly which fields an app accepts — the default is ${DEFAULT_FIELDS.map((f) => f.id).join(", ")}. Anything undeclared is rejected, so a leaked key can't be used to mail arbitrary content.`,
   },
   {
     title: `${TEMPLATE_LIST.length} mail designs`,
@@ -92,11 +92,55 @@ const FEATURES = [
     title: "Every attempt logged",
     body: "Successes and failures are recorded with the mail server's own response, so a missing email is something you can actually diagnose.",
   },
+  {
+    // Accurate as written: a delivered submission leaves no copy behind. The only rows
+    // that keep anything content-derived are the blocked ones — the words the spam
+    // filter matched, or a refused file's name — so the claim is scoped to delivery.
+    title: "Nothing delivered is stored",
+    body: "The submission is rendered, emailed and dropped. The log keeps the status, the time and the mail server's reply — never the fields you received. Only a blocked submission records what triggered the block.",
+  },
 ];
 
-// Every block below is the same shape: an eyebrow label naming the section, the
-// heading it is labelled by, then content. One component so a new section cannot
-// forget `aria-labelledby` or drift from the others' spacing.
+// Decorative list markers. SVG rather than a "✓"/"✕" character: generated content is
+// exposed to the accessibility tree, so a glyph marker gets announced ("check mark") once
+// per point, and dingbats render differently in every font. `currentColor` lets one shape
+// serve both themes.
+function TickIcon() {
+  return (
+    <svg className="point-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M3.5 8.5 6.5 11.5 12.5 4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CrossIcon() {
+  return (
+    <svg className="point-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M5 5 11 11M11 5 5 11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// Every block below is the same shape: an optional eyebrow label, an optional heading,
+// then content. One component so a new section cannot forget `aria-labelledby` or drift
+// from the others' spacing. The label is omitted where the heading already says
+// everything an eyebrow would ("Who it's for" / "Who it's not for") — repeating it there
+// is noise, not structure. One of the two has to be present, because whichever it is
+// carries the `id` that names the section: drop both and the section has no accessible
+// name at all.
 function Section({
   id,
   label,
@@ -104,14 +148,23 @@ function Section({
   children,
 }: {
   id: string;
-  label: string;
-  title: string;
+  label?: string;
+  title?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="landing-section" aria-labelledby={id}>
-      <p className="section-label">{label}</p>
-      <h2 id={id}>{title}</h2>
+    <section
+      // Without a heading the eyebrow has to carry the h2's bottom margin, or the block
+      // sits tighter than every other section.
+      className={title ? "landing-section" : "landing-section landing-section-unheaded"}
+      aria-labelledby={id}
+    >
+      {label ? (
+        <p className="section-label" id={title ? undefined : id}>
+          {label}
+        </p>
+      ) : null}
+      {title ? <h2 id={id}>{title}</h2> : null}
       {children}
     </section>
   );
@@ -172,7 +225,7 @@ export default async function Home() {
           height={180}
           priority
         />
-        <h1>Your website&rsquo;s forms, in your inbox.</h1>
+        <h1>Contact form, feedback form, whatever the form &mdash; in your inbox.</h1>
         <p className="hero-lede">{BRAND_TAGLINE}</p>
         <div className="hero-actions">
           <Link className="btn-primary" href="/register">
@@ -182,13 +235,54 @@ export default async function Home() {
             Read the API docs
           </Link>
         </div>
-        <p className="muted">No SDK to install. One endpoint, one secret key per site.</p>
         <p className="hero-price">
           Free · {env.appDailySendLimit} emails a day per app · no card, no plan to cancel
         </p>
       </section>
 
-      <Section id="used-by" label="Customers" title="Live on">
+      <Section id="who" title="Who it’s for">
+        <div className="feature-grid">
+          {AUDIENCES.map((a) => (
+            <div className="feature-card" key={a.title}>
+              <h3>{a.title}</h3>
+              <p>{a.body}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Points rather than cards: these are things to read down and tick off, and a
+          grid of eight competed with the three-card "Who it's for" above it for the same
+          visual weight. Ticks rather than bullets for the same reason `.limits-list`
+          below crosses its items — the marker carries the sense, so the two lists don't
+          read as one undifferentiated wall. */}
+      <Section id="features" label="Features" title="What you get">
+        <ul className="check-list">
+          {FEATURES.map((f) => (
+            <li key={f.title}>
+              <TickIcon />
+              <span>
+                <strong>{f.title}</strong> — {f.body}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      <Section id="not-for" title="Who it’s not for">
+        <ul className="limits-list">
+          {NOT_FOR.map((item) => (
+            <li key={item}>
+              <CrossIcon />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      {/* Last of the content sections on purpose: proof reads better after the pitch it
+          is proof of, and a one-entry list is not a headline. */}
+      <Section id="used-by" label="Clients">
         <ul className="used-by-grid">
           {USED_BY.map((site) => (
             <li className="used-by-card" key={site.domain}>
@@ -208,36 +302,6 @@ export default async function Home() {
           Sending through {BRAND_FULL} and happy to be listed?{" "}
           <a href={`mailto:${CONTACT_EMAIL}`}>Tell us</a> and we&rsquo;ll add your site.
         </p>
-      </Section>
-
-      <Section id="who" label="Audience" title="Who it’s for">
-        <div className="feature-grid">
-          {AUDIENCES.map((a) => (
-            <div className="feature-card" key={a.title}>
-              <h3>{a.title}</h3>
-              <p>{a.body}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section id="features" label="Features" title="What you get">
-        <div className="feature-grid">
-          {FEATURES.map((f) => (
-            <div className="feature-card" key={f.title}>
-              <h3>{f.title}</h3>
-              <p>{f.body}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section id="not-for" label="Scope" title="What it isn’t">
-        <ul className="limits-list">
-          {NOT_FOR.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
       </Section>
 
       <section className="landing-cta">

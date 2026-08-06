@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { DesignPicker, type Design } from "./DesignPicker";
 import { FieldsEditor } from "./FieldsEditor";
 import { SpamGuardEditor } from "./SpamGuardEditor";
@@ -8,7 +9,7 @@ import { AutoReplyEditor } from "./AutoReplyEditor";
 import { AttachmentsEditor } from "./AttachmentsEditor";
 import { CodeSnippets } from "./CodeSnippets";
 import { ActivityPanel } from "./ActivityPanel";
-import { DEFAULT_FIELDS, type AppField } from "@/lib/fields";
+import { firstFieldProblem, withoutBlankFields, type AppField } from "@/lib/fields";
 import { SPAM_GUARD_OFF, type SpamGuard } from "@/lib/bot-guard";
 import { AUTO_RESPONDER_OFF, type AutoResponder } from "@/lib/auto-responder";
 import {
@@ -34,6 +35,34 @@ type App = {
 
 type OtpTarget = { id: string; websiteName: string; destinationEmail: string };
 
+/**
+ * What the Actions menu can open. One panel per app at a time, tracked in a single piece
+ * of state: the previous version kept a separate `editing*` object per editor, which made
+ * "only one open" something every button had to remember rather than something the shape
+ * of the state guarantees.
+ */
+type ActionKind = "fields" | "design" | "reply" | "guard" | "attachments" | "code";
+
+/** The pending edit for whichever panel is open — its slice is the one the panel writes. */
+type Draft = {
+  templateId: string;
+  fields: AppField[];
+  guard: SpamGuard;
+  autoResponder: AutoResponder;
+  attachments: AttachmentConfig;
+};
+
+const ACTION_LABELS: Record<ActionKind, string> = {
+  fields: "Edit fields",
+  design: "Change design",
+  reply: "Auto-reply",
+  guard: "Spam guard",
+  attachments: "Attachments",
+  code: "Get the code",
+};
+
+const ACTION_ORDER: ActionKind[] = ["fields", "design", "reply", "guard", "attachments", "code"];
+
 const OTP_MESSAGES: Record<string, string> = {
   invalid: "That code isn't right. Check the email and try again.",
   expired: "That code has expired. Send a new one.",
@@ -44,9 +73,11 @@ const OTP_MESSAGES: Record<string, string> = {
 const FIELD_MESSAGES: Record<string, string> = {
   no_fields: "An app needs at least one field.",
   too_many_fields: "That's too many fields.",
-  invalid_field_name:
-    "Field names must start with a letter and use only letters, digits, _ or -.",
-  duplicate_field: "Two fields have the same name.",
+  invalid_field_id:
+    "Field ids must start with a letter and use only letters, digits, _ or -.",
+  invalid_field_label: "Every field needs a label, and it must be short and single-line.",
+  duplicate_field: "Two fields have the same id.",
+  duplicate_label: "Two fields have the same label.",
 };
 
 const GUARD_MESSAGES: Record<string, string> = {
@@ -70,59 +101,32 @@ function guardSummary(guard: SpamGuard): string {
 
 export function AppsManager({
   designs,
-  accountEmail,
   baseUrl,
 }: {
   designs: Design[];
-  accountEmail: string;
   baseUrl: string;
 }) {
   const [apps, setApps] = useState<App[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [creating, setCreating] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
-  const [newSecret, setNewSecret] = useState<{ name: string; key: string } | null>(null);
-  // Widened to string: the picker hands back whichever id was clicked, and the
-  // server is what validates it against the catalog.
-  const [newTemplateId, setNewTemplateId] = useState<string>(designs[0].id);
-  const [newFields, setNewFields] = useState<AppField[]>(DEFAULT_FIELDS.map((f) => ({ ...f })));
-  // Destination field is controlled so the "my own address" checkbox can fill it.
-  const [useOwnEmail, setUseOwnEmail] = useState(false);
-  const [destination, setDestination] = useState("");
+  // A key is shown once, in the row of the app it belongs to — `appId` is what puts it
+  // there instead of at the top of the page, where it sat above whichever app you were
+  // actually looking at.
+  const [newSecret, setNewSecret] = useState<{ appId: string; name: string; key: string } | null>(
+    null
+  );
   // Which app is awaiting a destination code, and the code being typed for it.
   const [otpTarget, setOtpTarget] = useState<OtpTarget | null>(null);
   const [otpCode, setOtpCode] = useState("");
   const [otpBusy, setOtpBusy] = useState(false);
   const [resending, setResending] = useState(false);
-  // Which app has its "change design" panel open, and the pending selection.
-  const [editing, setEditing] = useState<{ id: string; templateId: string } | null>(null);
-  const [savingDesign, setSavingDesign] = useState(false);
-  // Same, for the field list.
-  const [editingFields, setEditingFields] = useState<{ id: string; fields: AppField[] } | null>(
-    null
-  );
-  const [savingFields, setSavingFields] = useState(false);
-  // Same, for the bot guard and the auto-reply.
-  const [editingGuard, setEditingGuard] = useState<{ id: string; guard: SpamGuard } | null>(null);
-  const [savingGuard, setSavingGuard] = useState(false);
-  const [editingReply, setEditingReply] = useState<{
-    id: string;
-    autoResponder: AutoResponder;
-  } | null>(null);
-  const [savingReply, setSavingReply] = useState(false);
-  // Same, for file attachments.
-  const [editingAttachments, setEditingAttachments] = useState<{
-    id: string;
-    attachments: AttachmentConfig;
-  } | null>(null);
-  const [savingAttachments, setSavingAttachments] = useState(false);
-  // Which app's delivery history is open. Mounted lazily so no app fetches its logs
-  // until asked for them.
-  const [activityId, setActivityId] = useState<string | null>(null);
-  // Which app's generated integration code is open.
-  const [codeId, setCodeId] = useState<string | null>(null);
+  // The single open panel, and the edit it is holding. One of each, because the Actions
+  // menu turns into Cancel while a panel is open — so a second one cannot be started.
+  const [action, setAction] = useState<{ appId: string; kind: ActionKind } | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     const res = await fetch("/api/apps");
@@ -141,23 +145,29 @@ export function AppsManager({
     return designs.find((d) => d.id === templateId)?.name ?? templateId;
   }
 
-  function onToggleOwnEmail(checked: boolean) {
-    setUseOwnEmail(checked);
-    setDestination(checked ? accountEmail : "");
+  function closeAction() {
+    setAction(null);
+    setDraft(null);
+    setError("");
   }
 
-  // Cheap pre-flight so an obvious slip is reported without a round trip; the
-  // server re-checks all of this in lib/fields.
-  function fieldsProblem(fields: AppField[]): string {
-    if (fields.length === 0) return FIELD_MESSAGES.no_fields;
-    const seen = new Set<string>();
-    for (const f of fields) {
-      const name = f.name.trim();
-      if (!/^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(name)) return FIELD_MESSAGES.invalid_field_name;
-      if (seen.has(name.toLowerCase())) return FIELD_MESSAGES.duplicate_field;
-      seen.add(name.toLowerCase());
-    }
-    return "";
+  /** Open one panel, seeding the draft from the app's saved settings. */
+  function openAction(app: App, kind: ActionKind) {
+    setError("");
+    setNotice("");
+    setOtpTarget(null);
+    setAction({ appId: app.id, kind });
+    setDraft({
+      templateId: app.templateId,
+      fields: app.fields.map((f) => ({ ...f })),
+      guard: { ...(app.spamGuard ?? SPAM_GUARD_OFF) },
+      autoResponder: { ...(app.autoResponder ?? AUTO_RESPONDER_OFF) },
+      attachments: { ...(app.attachments ?? ATTACHMENTS_OFF) },
+    });
+  }
+
+  function isOpen(app: App, kind: ActionKind) {
+    return action?.appId === app.id && action.kind === kind;
   }
 
   async function onRegenerate(app: App) {
@@ -175,7 +185,7 @@ export function AppsManager({
     setRegeneratingId(null);
     if (res.ok) {
       const data = await res.json();
-      setNewSecret({ name: data.websiteName, key: data.secretKey });
+      setNewSecret({ appId: app.id, name: data.websiteName, key: data.secretKey });
     } else {
       setError("Could not regenerate the key. Please try again.");
     }
@@ -185,6 +195,7 @@ export function AppsManager({
     setError("");
     setNotice("");
     setOtpCode("");
+    closeAction();
     setOtpTarget(
       otpTarget?.id === app.id
         ? null
@@ -206,10 +217,11 @@ export function AppsManager({
     setOtpBusy(false);
     if (res.ok) {
       const data = await res.json();
+      const appId = otpTarget.id;
       setOtpTarget(null);
       setOtpCode("");
       // The key only exists from this moment — the app had none before.
-      setNewSecret({ name: data.websiteName, key: data.secretKey });
+      setNewSecret({ appId, name: data.websiteName, key: data.secretKey });
       load();
       return;
     }
@@ -228,178 +240,45 @@ export function AppsManager({
     else setError("Could not send a new code. Please try again.");
   }
 
-  async function onSaveDesign() {
-    if (!editing) return;
+  /**
+   * Every panel saves through the same PATCH: one route, one body per panel, one place
+   * that reports failure. The server owns the rules, so a rejection is reported by its
+   * own error code.
+   */
+  async function save(body: Record<string, unknown>, messages: Record<string, string>, ok: string) {
+    if (!action) return;
     setError("");
-    setSavingDesign(true);
-    const res = await fetch(`/api/apps/${editing.id}`, {
+    setNotice("");
+    setSaving(true);
+    const res = await fetch(`/api/apps/${action.appId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ templateId: editing.templateId }),
+      body: JSON.stringify(body),
     });
-    setSavingDesign(false);
+    setSaving(false);
     if (res.ok) {
-      setEditing(null);
+      closeAction();
+      setNotice(ok);
       load();
-    } else {
-      setError("Could not change the design. Please try again.");
+      return;
     }
+    const data = await res.json().catch(() => ({}));
+    setError(messages[data.error] ?? "Could not save that change. Please try again.");
   }
 
   async function onSaveFields() {
-    if (!editingFields) return;
-    const problem = fieldsProblem(editingFields.fields);
+    if (!draft) return;
+    const fields = withoutBlankFields(draft.fields);
+    const problem = firstFieldProblem(fields);
     if (problem) {
-      setError(problem);
+      setError(FIELD_MESSAGES[problem]);
       return;
     }
-    setError("");
-    setNotice("");
-    setSavingFields(true);
-    const res = await fetch(`/api/apps/${editingFields.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: editingFields.fields }),
-    });
-    setSavingFields(false);
-    if (res.ok) {
-      setEditingFields(null);
-      setNotice("Fields updated. Submissions are checked against the new list from now on.");
-      load();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    setError(FIELD_MESSAGES[data.error] ?? "Could not save the fields. Please try again.");
-  }
-
-  // Both panels PATCH the same route as the design and field editors; the server owns
-  // the rules, so a rejection is reported by its own error code.
-  async function onSaveGuard() {
-    if (!editingGuard) return;
-    setError("");
-    setNotice("");
-    setSavingGuard(true);
-    const res = await fetch(`/api/apps/${editingGuard.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ spamGuard: editingGuard.guard }),
-    });
-    setSavingGuard(false);
-    if (res.ok) {
-      setEditingGuard(null);
-      setNotice("Spam guard saved.");
-      load();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    setError(GUARD_MESSAGES[data.error] ?? "Could not save the spam guard. Please try again.");
-  }
-
-  async function onSaveReply() {
-    if (!editingReply) return;
-    setError("");
-    setNotice("");
-    setSavingReply(true);
-    const res = await fetch(`/api/apps/${editingReply.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ autoResponder: editingReply.autoResponder }),
-    });
-    setSavingReply(false);
-    if (res.ok) {
-      setEditingReply(null);
-      setNotice(
-        editingReply.autoResponder.enabled
-          ? "Auto-reply saved. Submitters get a confirmation from now on."
-          : "Auto-reply saved and switched off."
-      );
-      load();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    setError(GUARD_MESSAGES[data.error] ?? "Could not save the auto-reply. Please try again.");
-  }
-
-  async function onSaveAttachments() {
-    if (!editingAttachments) return;
-    setError("");
-    setNotice("");
-    setSavingAttachments(true);
-    const res = await fetch(`/api/apps/${editingAttachments.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attachments: editingAttachments.attachments }),
-    });
-    setSavingAttachments(false);
-    if (res.ok) {
-      setEditingAttachments(null);
-      setNotice(
-        editingAttachments.attachments.enabled
-          ? "Attachments saved. Post to /api/v1/sendWithAttachment to send files."
-          : "Attachments saved and switched off."
-      );
-      load();
-      return;
-    }
-    const data = await res.json().catch(() => ({}));
-    setError(GUARD_MESSAGES[data.error] ?? "Could not save the attachment settings.");
-  }
-
-  async function onCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const problem = fieldsProblem(newFields);
-    if (problem) {
-      setError(problem);
-      return;
-    }
-    setError("");
-    setNotice("");
-    setCreating(true);
-    const form = e.currentTarget;
-    const data = new FormData(form);
-    const res = await fetch("/api/apps", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        websiteName: data.get("websiteName"),
-        destinationEmail: destination,
-        templateId: newTemplateId,
-        fields: newFields,
-      }),
-    });
-    setCreating(false);
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setError(
-        FIELD_MESSAGES[body.error] ??
-          "Could not create app. Check the name and a valid email address."
-      );
-      return;
-    }
-
-    const created = await res.json();
-    form.reset();
-    setDestination("");
-    setUseOwnEmail(false);
-    setNewTemplateId(designs[0].id);
-    setNewFields(DEFAULT_FIELDS.map((f) => ({ ...f })));
-    if (created.otpRequired) {
-      // No key yet: it is issued when the destination code is entered.
-      setOtpTarget({
-        id: created.id,
-        websiteName: created.websiteName,
-        destinationEmail: created.destinationEmail,
-      });
-      setOtpCode("");
-      setNotice(
-        created.codeSent
-          ? `We emailed a code to ${created.destinationEmail}. Enter it below to confirm the address and get your secret key.`
-          : `We couldn't email ${created.destinationEmail} just now — use “Send a new code” below.`
-      );
-    } else {
-      setNewSecret({ name: created.websiteName, key: created.secretKey });
-    }
-    load();
+    await save(
+      { fields },
+      FIELD_MESSAGES,
+      "Fields updated. Submissions are checked against the new list from now on."
+    );
   }
 
   const otpPanel = otpTarget && (
@@ -433,88 +312,51 @@ export function AppsManager({
     </form>
   );
 
+  /** The issued-once key, shown under the app it belongs to. */
+  function secretCard(app: App) {
+    if (newSecret?.appId !== app.id) return null;
+    return (
+      <div className="secret-issued">
+        <h4>Secret key for “{newSecret.name}”</h4>
+        <p className="muted">
+          Copy it now — this is the only time it is shown. Store it in your
+          website&rsquo;s environment variables.
+        </p>
+        <div className="secret">{newSecret.key}</div>
+        <button type="button" className="regen-btn" onClick={() => setNewSecret(null)}>
+          I&rsquo;ve saved it
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
-      <form className="card card-wide" onSubmit={onCreate}>
-        <h2>Register a new app</h2>
-        {error && (
-          <div className="msg error" role="alert">
-            {error}
-          </div>
-        )}
-        {notice && (
-          <div className="msg ok" role="status">
-            {notice}
-          </div>
-        )}
-        <label htmlFor="websiteName">Website name</label>
-        <input id="websiteName" name="websiteName" type="text" required placeholder="Acme contact form" />
-
-        <label htmlFor="destinationEmail">Email to send submissions to</label>
-        <label className="checkbox-row" htmlFor="useOwnEmail">
-          <input
-            id="useOwnEmail"
-            type="checkbox"
-            checked={useOwnEmail}
-            onChange={(e) => onToggleOwnEmail(e.target.checked)}
-          />
-          <span>
-            Send to my account address (<strong>{accountEmail}</strong>) — already verified, so
-            no code needed
-          </span>
-        </label>
-        <input
-          id="destinationEmail"
-          name="destinationEmail"
-          type="email"
-          required
-          readOnly={useOwnEmail}
-          value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          placeholder="support@acme.com"
-          aria-describedby="destination-help"
-        />
-        <p className="muted field-help" id="destination-help">
-          Any inbox works — Gmail, Zoho, Outlook or your own domain. Any address other
-          than your own is emailed a confirmation code, and submissions are only
-          delivered once it is entered.
-        </p>
-
-        <h3 className="form-section">Form fields</h3>
-        <FieldsEditor fields={newFields} onChange={setNewFields} idPrefix="new-field" />
-
-        <h3 className="form-section">Mail design</h3>
-        <DesignPicker
-          designs={designs}
-          value={newTemplateId}
-          onChange={setNewTemplateId}
-          idPrefix="new-design"
-        />
-
-        <button type="submit" disabled={creating} style={{ marginTop: "1rem" }}>
-          {creating ? "Generating…" : "Register app"}
-        </button>
-      </form>
-
-      {newSecret && (
-        <div className="card card-wide" style={{ marginTop: "1rem" }}>
-          <h2>Secret key for “{newSecret.name}”</h2>
+      {/* Registration moved to its own page: it now walks through the fields, the design
+          and the three optional settings a section at a time, which is more than a card
+          above the list can hold. What stays here are the two message areas the per-row
+          actions still write to. */}
+      <div className="card card-wide register-cta">
+        <div>
+          <h2>Register a new app</h2>
           <p className="muted">
-            Copy it now — this is the only time it is shown. Store it in your
-            website&rsquo;s environment variables.
+            Name the site, say where submissions go, choose the fields and the design —
+            the secret key is issued at the end.
           </p>
-          <div className="secret">{newSecret.key}</div>
-          <button type="button" onClick={() => setNewSecret(null)}>
-            I&rsquo;ve saved it
-          </button>
+        </div>
+        <Link href="/dashboard/register" className="btn-primary">
+          Register an app
+        </Link>
+      </div>
+
+      {error && (
+        <div className="msg error" role="alert">
+          {error}
         </div>
       )}
-
-      {/* Panel for an app just created; unverified rows below open their own copy. */}
-      {otpTarget && !apps.some((a) => a.id === otpTarget.id) && (
-        <div className="card card-wide" style={{ marginTop: "1rem" }}>
-          <h2>Confirm the destination address</h2>
-          {otpPanel}
+      {notice && (
+        <div className="msg ok" role="status">
+          {notice}
         </div>
       )}
 
@@ -522,7 +364,7 @@ export function AppsManager({
         {!loaded ? (
           <p className="muted">Loading…</p>
         ) : apps.length === 0 ? (
-          <p className="muted">No apps yet. Register one above to get a secret key.</p>
+          <p className="muted">No apps yet. Register one to get a secret key.</p>
         ) : (
           apps.map((a) => (
             <div className="app-item" key={a.id}>
@@ -541,10 +383,12 @@ export function AppsManager({
                   <p>
                     Fields:{" "}
                     {a.fields.map((f, i) => (
-                      <span key={f.name}>
+                      <span key={f.id}>
                         {i > 0 && ", "}
-                        <code>{f.name}</code>
-                        {f.required && <abbr title="required">*</abbr>}
+                        <code>{f.id}</code>
+                        {/* The label only differs from the id when the owner set one —
+                            showing both would double the length of every row. */}
+                        {f.name.toLowerCase() !== f.id.toLowerCase() && ` (${f.name})`}
                       </span>
                     ))}
                   </p>
@@ -574,103 +418,44 @@ export function AppsManager({
                   )}
                 </div>
                 <div className="app-item-actions">
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={editingFields?.id === a.id}
-                    onClick={() =>
-                      setEditingFields(
-                        editingFields?.id === a.id
-                          ? null
-                          : { id: a.id, fields: a.fields.map((f) => ({ ...f })) }
-                      )
-                    }
-                  >
-                    {editingFields?.id === a.id ? "Cancel" : "Edit fields"}
-                  </button>
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={editing?.id === a.id}
-                    onClick={() =>
-                      setEditing(
-                        editing?.id === a.id ? null : { id: a.id, templateId: a.templateId }
-                      )
-                    }
-                  >
-                    {editing?.id === a.id ? "Cancel" : "Change design"}
-                  </button>
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={editingReply?.id === a.id}
-                    onClick={() =>
-                      setEditingReply(
-                        editingReply?.id === a.id
-                          ? null
-                          : {
-                              id: a.id,
-                              autoResponder: { ...(a.autoResponder ?? AUTO_RESPONDER_OFF) },
-                            }
-                      )
-                    }
-                  >
-                    {editingReply?.id === a.id ? "Cancel" : "Auto-reply"}
-                  </button>
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={editingGuard?.id === a.id}
-                    onClick={() =>
-                      setEditingGuard(
-                        editingGuard?.id === a.id
-                          ? null
-                          : { id: a.id, guard: { ...(a.spamGuard ?? SPAM_GUARD_OFF) } }
-                      )
-                    }
-                  >
-                    {editingGuard?.id === a.id ? "Cancel" : "Spam guard"}
-                  </button>
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={editingAttachments?.id === a.id}
-                    onClick={() =>
-                      setEditingAttachments(
-                        editingAttachments?.id === a.id
-                          ? null
-                          : { id: a.id, attachments: { ...(a.attachments ?? ATTACHMENTS_OFF) } }
-                      )
-                    }
-                  >
-                    {editingAttachments?.id === a.id ? "Cancel" : "Attachments"}
-                  </button>
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={codeId === a.id}
-                    onClick={() => setCodeId(codeId === a.id ? null : a.id)}
-                  >
-                    {codeId === a.id ? "Hide code" : "Get the code"}
-                  </button>
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    aria-expanded={activityId === a.id}
-                    onClick={() => setActivityId(activityId === a.id ? null : a.id)}
-                  >
-                    {activityId === a.id ? "Hide activity" : "Activity"}
-                  </button>
-                  {a.destinationVerified ? (
-                    <button
-                      type="button"
-                      className="regen-btn"
-                      onClick={() => onRegenerate(a)}
-                      disabled={regeneratingId === a.id}
-                    >
-                      {regeneratingId === a.id ? "Generating…" : "Regenerate key"}
+                  {/* One menu, not eight buttons — and while a panel is open it is a
+                      Cancel button, which is what limits the row to one action at a time. */}
+                  {action?.appId === a.id ? (
+                    <button type="button" className="regen-btn" onClick={closeAction}>
+                      Cancel
                     </button>
                   ) : (
+                    <select
+                      className="action-select"
+                      aria-label={`Actions for ${a.websiteName}`}
+                      value=""
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        // Not a panel: it asks for confirmation and then shows the key
+                        // below, so the menu goes straight back to its placeholder.
+                        if (value === "key") {
+                          e.target.value = "";
+                          onRegenerate(a);
+                          return;
+                        }
+                        openAction(a, value as ActionKind);
+                      }}
+                      disabled={regeneratingId === a.id}
+                    >
+                      <option value="">
+                        {regeneratingId === a.id ? "Generating…" : "Actions…"}
+                      </option>
+                      {ACTION_ORDER.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {ACTION_LABELS[kind]}
+                        </option>
+                      ))}
+                      {/* Only an app with a confirmed destination has a key to replace. */}
+                      {a.destinationVerified && <option value="key">Regenerate key</option>}
+                    </select>
+                  )}
+                  {!a.destinationVerified && (
                     <button
                       type="button"
                       className="regen-btn"
@@ -685,109 +470,115 @@ export function AppsManager({
 
               {otpTarget?.id === a.id && otpPanel}
 
-              {editingFields?.id === a.id && (
+              {isOpen(a, "fields") && draft && (
                 <div className="design-edit">
                   <FieldsEditor
-                    fields={editingFields.fields}
-                    onChange={(fields) => setEditingFields({ id: a.id, fields })}
+                    fields={draft.fields}
+                    onChange={(fields) => setDraft({ ...draft, fields })}
                     idPrefix={`fields-${a.id}`}
                   />
-                  <button
-                    type="button"
-                    className="regen-btn"
-                    disabled={savingFields}
-                    onClick={onSaveFields}
-                  >
-                    {savingFields ? "Saving…" : "Save fields"}
+                  <button type="button" className="regen-btn" disabled={saving} onClick={onSaveFields}>
+                    {saving ? "Saving…" : "Save fields"}
                   </button>
                 </div>
               )}
 
-              {editing?.id === a.id && (
+              {isOpen(a, "design") && draft && (
                 <div className="design-edit">
                   <DesignPicker
                     designs={designs}
-                    value={editing.templateId}
-                    onChange={(templateId) => setEditing({ id: a.id, templateId })}
+                    value={draft.templateId}
+                    onChange={(templateId) => setDraft({ ...draft, templateId })}
                     idPrefix={`design-${a.id}`}
                   />
                   <button
                     type="button"
                     className="regen-btn"
-                    disabled={savingDesign || editing.templateId === a.templateId}
-                    onClick={onSaveDesign}
+                    disabled={saving || draft.templateId === a.templateId}
+                    onClick={() =>
+                      save({ templateId: draft.templateId }, GUARD_MESSAGES, "Design changed.")
+                    }
                   >
-                    {savingDesign ? "Saving…" : "Save design"}
+                    {saving ? "Saving…" : "Save design"}
                   </button>
                 </div>
               )}
 
-              {editingReply?.id === a.id && (
+              {isOpen(a, "reply") && draft && (
                 <div className="design-edit">
                   <AutoReplyEditor
-                    autoResponder={editingReply.autoResponder}
+                    autoResponder={draft.autoResponder}
                     websiteName={a.websiteName}
-                    onChange={(autoResponder) => setEditingReply({ id: a.id, autoResponder })}
+                    onChange={(autoResponder) => setDraft({ ...draft, autoResponder })}
                     idPrefix={`reply-${a.id}`}
                   />
                   <button
                     type="button"
                     className="regen-btn"
-                    disabled={savingReply}
-                    onClick={onSaveReply}
+                    disabled={saving}
+                    onClick={() =>
+                      save(
+                        { autoResponder: draft.autoResponder },
+                        GUARD_MESSAGES,
+                        draft.autoResponder.enabled
+                          ? "Auto-reply saved. Submitters get a confirmation from now on."
+                          : "Auto-reply saved and switched off."
+                      )
+                    }
                   >
-                    {savingReply ? "Saving…" : "Save auto-reply"}
+                    {saving ? "Saving…" : "Save auto-reply"}
                   </button>
                 </div>
               )}
 
-              {editingGuard?.id === a.id && (
+              {isOpen(a, "guard") && draft && (
                 <div className="design-edit">
                   <SpamGuardEditor
-                    guard={editingGuard.guard}
-                    onChange={(guard) => setEditingGuard({ id: a.id, guard })}
+                    guard={draft.guard}
+                    onChange={(guard) => setDraft({ ...draft, guard })}
                     idPrefix={`guard-${a.id}`}
                   />
                   <button
                     type="button"
                     className="regen-btn"
-                    disabled={savingGuard}
-                    onClick={onSaveGuard}
+                    disabled={saving}
+                    onClick={() => save({ spamGuard: draft.guard }, GUARD_MESSAGES, "Spam guard saved.")}
                   >
-                    {savingGuard ? "Saving…" : "Save spam guard"}
+                    {saving ? "Saving…" : "Save spam guard"}
                   </button>
                 </div>
               )}
 
-              {editingAttachments?.id === a.id && (
+              {isOpen(a, "attachments") && draft && (
                 <div className="design-edit">
                   <AttachmentsEditor
-                    attachments={editingAttachments.attachments}
-                    onChange={(attachments) => setEditingAttachments({ id: a.id, attachments })}
+                    attachments={draft.attachments}
+                    onChange={(attachments) => setDraft({ ...draft, attachments })}
                     idPrefix={`attachments-${a.id}`}
                   />
                   <button
                     type="button"
                     className="regen-btn"
-                    disabled={savingAttachments}
-                    onClick={onSaveAttachments}
+                    disabled={saving}
+                    onClick={() =>
+                      save(
+                        { attachments: draft.attachments },
+                        GUARD_MESSAGES,
+                        draft.attachments.enabled
+                          ? "Attachments saved. Add a file input to your form — the endpoint is unchanged."
+                          : "Attachments saved and switched off."
+                      )
+                    }
                   >
-                    {savingAttachments ? "Saving…" : "Save attachments"}
+                    {saving ? "Saving…" : "Save attachments"}
                   </button>
                 </div>
               )}
 
-              {codeId === a.id && (
+              {isOpen(a, "code") && (
                 <div className="design-edit">
                   <CodeSnippets
-                    // The endpoint follows the setting: an app that accepts files has to
-                    // post multipart to the other route, so handing it the JSON snippet
-                    // would be handing it a snippet that drops the attachment.
-                    endpoint={
-                      a.attachments?.enabled
-                        ? `${baseUrl}/api/v1/sendWithAttachment`
-                        : `${baseUrl}/api/v1/send`
-                    }
+                    endpoint={`${baseUrl}/api/v1/send`}
                     fields={a.fields}
                     spamGuard={a.spamGuard ?? SPAM_GUARD_OFF}
                     attachments={a.attachments ?? ATTACHMENTS_OFF}
@@ -795,7 +586,11 @@ export function AppsManager({
                 </div>
               )}
 
-              {activityId === a.id && (
+              {secretCard(a)}
+
+              {/* Last in the row, and only for an app that has a key: before the
+                  destination is confirmed there is nothing that could have been sent. */}
+              {a.destinationVerified && (
                 <div className="design-edit">
                   <ActivityPanel appId={a.id} />
                 </div>

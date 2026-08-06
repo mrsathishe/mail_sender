@@ -102,10 +102,7 @@ export default async function DocsPage() {
               Paste one of your app&rsquo;s secret keys and a JSON payload, then send a
               real test email to that app&rsquo;s destination address.
             </p>
-            <TrySend
-              endpoint={`${base}/api/v1/send`}
-              attachmentEndpoint={`${base}/api/v1/sendWithAttachment`}
-            />
+            <TrySend endpoint={`${base}/api/v1/send`} />
           </>
         ) : (
           <p>

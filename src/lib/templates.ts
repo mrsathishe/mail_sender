@@ -475,16 +475,18 @@ export function renderAutoReplyHtml(
 }
 
 // Fixed payload behind /api/templates/[id]/preview so the dashboard preview
-// exercises a plain value, a long value, a nested object and an empty field.
+// exercises a plain value, a long value, a nested object and an empty field. Keyed by
+// label, as a real submission is once `orderSubmission()` has ordered it — nested keys
+// are still titleized, since a value inside a submission has no declared label.
 export const PREVIEW_DATA: Record<string, unknown> = {
-  name: "Jane Doe",
-  email: "jane@example.com",
-  phone: "+1 555 0134",
-  message:
+  Name: "Jane Doe",
+  Email: "jane@example.com",
+  Phone: "+1 555 0134",
+  Message:
     "Hi — I'd like a quote for the contact form integration.\nCould you call me this week?",
-  company: { name: "Acme Inc.", size: "25 people" },
-  interests: ["Pricing", "Support plan"],
-  budget: "",
+  Company: { name: "Acme Inc.", size: "25 people" },
+  Interests: ["Pricing", "Support plan"],
+  Budget: "",
 };
 
 // The one sample render, shared by the dashboard preview route and the landing

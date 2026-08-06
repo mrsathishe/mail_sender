@@ -1,12 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
-  ACCEPTED_EXTENSIONS,
-  ACCEPT_ATTRIBUTE,
-  ATTACHMENT_MAX_TOTAL_BYTES,
-  formatBytes,
-} from "@/lib/attachments";
 
 // Machine-readable codes from POST /api/contact turned into something a visitor can
 // act on. The guard failures deliberately don't say which guard fired — that is a
@@ -19,15 +13,9 @@ const MESSAGES: Record<string, string> = {
     "The message was flagged by our spam filter. Try again with fewer links, or email us directly.",
   invalid_input: "Please check the form: a name, a valid email and a message are needed.",
   too_many_requests: "You've just sent a message — please wait a minute before the next one.",
-  payload_too_large: `That message and its attachments come to more than ${formatBytes(
-    ATTACHMENT_MAX_TOTAL_BYTES
-  )}.`,
-  too_many_files: "That's too many files — attach up to three.",
-  unsupported_file_type: `That file type isn't accepted. Try one of: ${ACCEPTED_EXTENSIONS.join(
-    ", "
-  )}.`,
-  invalid_filename: "One of those files has no extension, so we can't tell what it is.",
-  empty_file: "One of those files is empty.",
+  // Unreachable from this form now that it carries no files — the fields are bounded by
+  // their own maxLength, well under the body cap — but kept because the code exists.
+  payload_too_large: "That message is too large. Please shorten it.",
   send_failed: "Our mail server refused it. Please try again, or email us directly.",
 };
 
@@ -45,18 +33,6 @@ export function ContactForm() {
     const form = e.currentTarget;
     const values = new FormData(form);
     values.set("elapsed_ms", String(Date.now() - renderedAt.current));
-
-    // Checked here as well as on the server so an oversized attachment is reported
-    // before it is uploaded — and because nginx answers its own 413 without the CORS
-    // headers or the JSON body this page reads.
-    const total = Array.from(values.values()).reduce(
-      (sum, value) => sum + (typeof value === "string" ? value.length : value.size),
-      0
-    );
-    if (total > ATTACHMENT_MAX_TOTAL_BYTES) {
-      setState({ kind: "error", text: MESSAGES.payload_too_large });
-      return;
-    }
 
     setSending(true);
     setState(null);
@@ -118,21 +94,6 @@ export function ContactForm() {
 
       <label htmlFor="contact-message">How can we help?</label>
       <textarea id="contact-message" name="message" rows={6} required minLength={10} maxLength={5000} />
-
-      <label htmlFor="contact-files">Attachments (optional)</label>
-      <input
-        id="contact-files"
-        name="files"
-        type="file"
-        multiple
-        accept={ACCEPT_ATTRIBUTE}
-        aria-describedby="contact-files-help"
-      />
-      <p className="muted field-help" id="contact-files-help">
-        Up to three files, {formatBytes(ATTACHMENT_MAX_TOTAL_BYTES)} in total — a
-        screenshot or a log makes a rendering problem far quicker to answer. Accepted:{" "}
-        {ACCEPTED_EXTENSIONS.join(", ")}.
-      </p>
 
       {/* Honeypot: off-screen and aria-hidden, so a person never sees or hears it and
           a naive bot fills it anyway. Not `.visually-hidden` — that class is meant to

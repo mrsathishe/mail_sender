@@ -4,9 +4,11 @@
 // ./templates.
 
 /**
- * `phone_number` → "Phone number". Exported because the same rule turns a declared
- * field name into a form label in the dashboard's generated snippets — an email row and
- * a form label reading differently for the same field would be its own small confusion.
+ * `phone_number` → "Phone number". Used for **nested** keys, which are values inside a
+ * submission rather than declared fields and so have no label of their own, and by
+ * `resolveFields()` to give a legacy field an initial label. A declared field's label is
+ * the owner's own text (lib/fields) and is never passed through here — that is the point
+ * of storing it.
  */
 export function titleize(key: string): string {
   const spaced = key.replace(/[_-]+/g, " ").trim();
@@ -34,9 +36,14 @@ function textValue(value: unknown, indent = ""): string {
   return String(value);
 }
 
+/**
+ * The plain-text alternative. Top-level keys are **already labels** — `orderSubmission()`
+ * keys the data by each declared field's label — so they are printed as given; titleizing
+ * here would rewrite the owner's own wording ("Order ID" → "Order id").
+ */
 export function buildEmailBody(data: Record<string, unknown>): string {
   return Object.entries(data)
-    .map(([key, value]) => `${titleize(key)}: ${textValue(value)}`)
+    .map(([label, value]) => `${label}: ${textValue(value)}`)
     .join("\n");
 }
 
@@ -87,8 +94,9 @@ function htmlValue(value: unknown): string {
 export type EmailRow = { label: string; valueHtml: string };
 
 export function toRows(data: Record<string, unknown>): EmailRow[] {
-  return Object.entries(data).map(([key, value]) => ({
-    label: escapeHtml(titleize(key)),
+  // Keys are the declared labels (see buildEmailBody) — escaped, never reworded.
+  return Object.entries(data).map(([label, value]) => ({
+    label: escapeHtml(label),
     valueHtml: htmlValue(value),
   }));
 }

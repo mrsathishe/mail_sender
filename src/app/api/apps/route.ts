@@ -7,9 +7,9 @@ import { generateSecretKey, hashSecret } from "@/lib/secret";
 import { issueDestinationOtp } from "@/lib/verification-mail";
 import { DEFAULT_TEMPLATE_ID, TEMPLATE_IDS, resolveTemplateId } from "@/lib/templates";
 import { DEFAULT_FIELDS, parseFields, resolveFields } from "@/lib/fields";
-import { resolveSpamGuard } from "@/lib/bot-guard";
-import { resolveAutoResponder } from "@/lib/auto-responder";
-import { resolveAttachmentConfig } from "@/lib/attachments";
+import { parseSpamGuard, resolveSpamGuard } from "@/lib/bot-guard";
+import { parseAutoResponder, resolveAutoResponder } from "@/lib/auto-responder";
+import { parseAttachmentConfig, resolveAttachmentConfig } from "@/lib/attachments";
 
 export const runtime = "nodejs";
 
@@ -50,9 +50,15 @@ const createSchema = z.object({
   websiteName: z.string().min(1).max(100),
   destinationEmail: z.email(),
   templateId: z.enum(TEMPLATE_IDS).default(DEFAULT_TEMPLATE_ID),
-  // Shape only — the names themselves are checked by parseFields, which owns the
-  // rules and reports which rule was broken.
-  fields: z.array(z.object({ name: z.string(), required: z.boolean().optional() })).optional(),
+  // Shape only — the ids and labels themselves are checked by parseFields, which owns
+  // the rules and reports which one was broken.
+  fields: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+  // The three per-app settings, accepted here so the register flow can collect them
+  // before the key is issued instead of making a PATCH per panel afterwards. Optional
+  // throughout: omitting one leaves the schema default, which is "off".
+  spamGuard: z.looseObject({}).optional(),
+  autoResponder: z.looseObject({}).optional(),
+  attachments: z.looseObject({}).optional(),
 });
 
 // POST /api/apps — register an app.
@@ -81,6 +87,27 @@ export async function POST(req: Request) {
     fields = result.fields;
   }
 
+  // Same rules and the same error codes as PATCH — the parsers own them, so a setting
+  // saved at registration is validated exactly as one edited later. Each stays
+  // `undefined` when the caller omitted it, so the schema's own "off" default applies
+  // rather than a second copy of it written here.
+  const settings: Record<string, unknown> = {};
+  if (parsed.data.spamGuard !== undefined) {
+    const result = parseSpamGuard(parsed.data.spamGuard);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    settings.spamGuard = result.guard;
+  }
+  if (parsed.data.autoResponder !== undefined) {
+    const result = parseAutoResponder(parsed.data.autoResponder);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    settings.autoResponder = result.autoResponder;
+  }
+  if (parsed.data.attachments !== undefined) {
+    const result = parseAttachmentConfig(parsed.data.attachments);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    settings.attachments = result.attachments;
+  }
+
   const destinationEmail = parsed.data.destinationEmail.toLowerCase();
   // Compare against the DB email, not the form's checkbox — the client can't be
   // trusted to tell us that these match.
@@ -95,9 +122,18 @@ export async function POST(req: Request) {
     destinationEmail,
     templateId: parsed.data.templateId,
     fields,
+    ...settings,
     destinationVerified: isOwnEmail,
     secretKeyHash: hashSecret(secretKey),
   });
+
+  // Read back off the saved document, so an omitted setting is echoed as whatever the
+  // schema defaulted it to rather than as the absence the caller sent.
+  const saved = {
+    spamGuard: resolveSpamGuard(app.spamGuard),
+    autoResponder: resolveAutoResponder(app.autoResponder),
+    attachments: resolveAttachmentConfig(app.attachments),
+  };
 
   if (isOwnEmail) {
     return NextResponse.json(
@@ -109,6 +145,7 @@ export async function POST(req: Request) {
         otpRequired: false,
         templateId: app.templateId,
         fields,
+        ...saved,
         secretKey, // shown once — never retrievable again
       },
       { status: 201 }
@@ -134,6 +171,7 @@ export async function POST(req: Request) {
       codeSent: otp.sent,
       templateId: app.templateId,
       fields,
+      ...saved,
     },
     { status: 201 }
   );

@@ -49,7 +49,15 @@ export default async function OpengraphImage() {
           {/* 1035×950 source; satori requires both dimensions and will not infer them. */}
           <img src={await lockupDataUri()} width={318} height={292} alt="" />
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        {/* `flexBasis: 0` + `flexGrow: 1` is what makes the tagline wrap instead of
+            running off the card: sized from the space left over (1040 content − 370 plate
+            − 64 gap), not from the text's own unwrapped width. Without it satori measures
+            the string at full width and clips at the right edge — `minWidth: 0` is the
+            other half, since a flex item otherwise refuses to shrink below its
+            min-content. */}
+        <div
+          style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexBasis: 0, minWidth: 0 }}
+        >
           <div style={{ display: "flex", alignItems: "flex-end", gap: "20px" }}>
             <div style={{ fontSize: 96, fontWeight: 700, color: BRAND_COLORS.goldLight }}>
               {BRAND_NAME}

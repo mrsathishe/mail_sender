@@ -11,14 +11,24 @@ let transporter: Transporter | null = null;
 // considered and rejected (§0/§4.1), so there is deliberately no per-app branch here.
 function getTransporter(): Transporter {
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.smtpHost,
-      port: env.smtpPort,
-      // Implicit TLS on 465; 587 upgrades via STARTTLS, which nodemailer does when
-      // `secure` is false.
-      secure: env.smtpSecure,
-      auth: { user: env.smtpUser, pass: env.smtpPass },
-    });
+    // Two calls rather than one with a ternary argument: a ternary is typed as the union
+    // of both branches *before* `createTransport` resolves an overload, and `jsonTransport`
+    // only exists on the JSON-transport options — so the union matches neither overload.
+    //
+    // MOCK_MODE (dev only, env.mockMode): nodemailer's own JSON transport never opens
+    // a socket, so a local run cannot send from the real mailbox by accident. The
+    // message is printed in sendMail below, which is how a verification code is
+    // "received" with no inbox to read.
+    transporter = env.mockMode
+      ? nodemailer.createTransport({ jsonTransport: true })
+      : nodemailer.createTransport({
+          host: env.smtpHost,
+          port: env.smtpPort,
+          // Implicit TLS on 465; 587 upgrades via STARTTLS, which nodemailer does when
+          // `secure` is false.
+          secure: env.smtpSecure,
+          auth: { user: env.smtpUser, pass: env.smtpPass },
+        });
   }
   return transporter;
 }
@@ -51,4 +61,10 @@ export async function sendMail(opts: {
       contentType: a.contentType,
     })),
   });
+
+  // Mock mode's entire delivery mechanism: nothing left the machine, so the terminal is
+  // the inbox — which is what makes a registration or destination code readable locally.
+  if (env.mockMode) {
+    console.log(`\n[mock mail] to: ${opts.to}\n[mock mail] subject: ${opts.subject}\n${opts.text}\n`);
+  }
 }

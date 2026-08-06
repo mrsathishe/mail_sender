@@ -14,5 +14,8 @@ coverage
 .DS_Store
 *.log
 
+# Bytecode from the Python search scripts under .claude/skills
+__pycache__/
+
 # Kubernetes real secret (use secret.example.yaml as a template)
 k8s/secret.yaml

@@ -1,4 +1,6 @@
 import { Schema, model, models, Types, type Model, type InferSchemaType } from "mongoose";
+import { env } from "@/lib/env";
+import { mockSendDedupeModel } from "@/mocks/mock-db";
 
 // Idempotency record for /v1/send (HARDENING_ROADMAP §2.5). One row per distinct
 // submission per app, holding the slot for a short window so a double-clicked
@@ -23,6 +25,10 @@ export type SendDedupeDoc = InferSchemaType<typeof SendDedupeSchema> & {
   _id: Types.ObjectId;
 };
 
-export const SendDedupe: Model<SendDedupeDoc> =
-  (models.SendDedupe as Model<SendDedupeDoc>) ||
-  model<SendDedupeDoc>("SendDedupe", SendDedupeSchema);
+// The MOCK_MODE swap — see the note in models/User.ts. The mock enforces `key`
+// uniqueness and throws code 11000, because that collision IS the claim mechanism
+// lib/dedupe.ts reads; a mock without it would silently stop suppressing duplicates.
+export const SendDedupe: Model<SendDedupeDoc> = env.mockMode
+  ? (mockSendDedupeModel as unknown as Model<SendDedupeDoc>)
+  : (models.SendDedupe as Model<SendDedupeDoc>) ||
+    model<SendDedupeDoc>("SendDedupe", SendDedupeSchema);

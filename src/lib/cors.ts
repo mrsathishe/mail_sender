@@ -27,7 +27,7 @@ const CORS_HEADERS: Record<string, string> = {
 /**
  * JSON reply carrying the CORS headers. Every return path of a browser-callable
  * route must use this, including the failures: a response without the header is
- * unreadable to the page, which turns `{ error: "missing_field", field: "email" }`
+ * unreadable to the page, which turns `{ error: "unknown_field", field: "emial" }`
  * into an opaque "CORS error" precisely when the developer needs the field name.
  */
 export function corsJson(body: unknown, init?: { status?: number }): NextResponse {

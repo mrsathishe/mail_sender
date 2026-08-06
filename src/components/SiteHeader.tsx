@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { BRAND_NAME, BRAND_SUFFIX, BRAND_FULL } from "@/lib/brand";
 import { Logo } from "./Logo";
-import { HeaderNav, type NavLink } from "./HeaderNav";
+import { HeaderNav, type NavItem } from "./HeaderNav";
 
 // One header for every page, so nav lives in a single place instead of being
 // re-declared by each area's own `.topbar`. Reading the session here makes every
@@ -11,12 +11,15 @@ import { HeaderNav, type NavLink } from "./HeaderNav";
 export async function SiteHeader() {
   const session = await getSession();
 
-  const links: NavLink[] = session
+  // "donate" sits before the account actions in both lists: it is an aside to whatever
+  // the visitor came for, so it should not stand between them and Sign in or Log out.
+  const items: NavItem[] = session
     ? [
         { href: "/dashboard", label: "Dashboard" },
         { href: "/docs", label: "API docs" },
         { href: "/contact", label: "Contact" },
         ...(session.role === "admin" ? [{ href: "/admin", label: "Admin" }] : []),
+        "donate",
       ]
     : [
         // Home only for signed-out visitors: `/` redirects a session straight to
@@ -24,6 +27,7 @@ export async function SiteHeader() {
         { href: "/", label: "Home" },
         { href: "/docs", label: "API docs" },
         { href: "/contact", label: "Contact" },
+        "donate",
         { href: "/login", label: "Sign in" },
         { href: "/register", label: "Get started", cta: true },
       ];
@@ -38,7 +42,7 @@ export async function SiteHeader() {
             <span className="brand-suffix">{BRAND_SUFFIX}</span>
           </span>
         </Link>
-        <HeaderNav links={links} signedIn={Boolean(session)} />
+        <HeaderNav items={items} signedIn={Boolean(session)} />
       </div>
     </header>
   );

@@ -37,7 +37,7 @@ const FAQ = [
   },
   {
     q: "Do I need a server to use it?",
-    a: "You need somewhere server-side to hold the key — a serverless function, a small API route, or your host's form handler. The key travels in a request header, which a plain HTML form can't set, and anything in page JavaScript is readable by anyone. A static site works fine: it posts to a small route of its own that forwards the submission.",
+    a: `No. The endpoint accepts cross-origin calls from any origin, so your frontend can call it directly with fetch — there is no route of your own to write. The one thing a browser can't do is submit a plain HTML form at it, because the key travels in a request header that a native form submit can't set, so it goes through an AJAX call instead. A key in page JavaScript is readable by anyone, so keep it in an environment variable if you do have somewhere server-side; where you don't, what bounds a scraped key is that it can only deliver to the address that app already confirmed, only in the fields it declares, and only ${env.appDailySendLimit} times a day.`,
   },
   {
     q: "How many emails can I send?",
@@ -151,7 +151,7 @@ export default async function ContactPage() {
         <h2 id="faq">Questions</h2>
         <dl className="faq-list">
           {FAQ.map((item) => (
-            <div key={item.q}>
+            <div className="faq-item" key={item.q}>
               <dt>{item.q}</dt>
               <dd>{item.a}</dd>
             </div>

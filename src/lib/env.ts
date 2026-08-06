@@ -59,6 +59,22 @@ export const env = {
     }
     return limit;
   },
+  get mockMode() {
+    // Dev-only: run against src/mocks/ instead of MongoDB, which is what makes
+    // `next dev` work with no database reachable. Read only by the five files in
+    // src/models, by connectDB and by the mailer — the swap is a whole-model swap, so no
+    // route, page or lib knows this setting exists.
+    //
+    // Gated on NODE_ENV, not on the flag alone, because the flag isn't the switch:
+    // `.env.development` is, and Next loads that for `next dev` only. Requiring
+    // development here means a build or a `next start` cannot be mocked even when the
+    // variable reaches them — and it does reach `next build`, which loads the .env files
+    // it can find while compiling. Throwing on production instead would make a perfectly
+    // correct build fail because of a dev file doing its job.
+    if (process.env.NODE_ENV !== "development") return false;
+    const raw = process.env.MOCK_MODE;
+    return raw === "true" || raw === "1";
+  },
   get spamScoreThreshold() {
     // Score at which a submission is refused (spam-score.ts). Tunable without a
     // release because the right number is only learnable from real traffic; raise it

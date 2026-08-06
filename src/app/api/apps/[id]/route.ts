@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 const patchSchema = z
   .object({
     templateId: z.enum(TEMPLATE_IDS).optional(),
-    fields: z.array(z.object({ name: z.string(), required: z.boolean().optional() })).optional(),
+    fields: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
     spamGuard: z.looseObject({}).optional(),
     autoResponder: z.looseObject({}).optional(),
     attachments: z.looseObject({}).optional(),

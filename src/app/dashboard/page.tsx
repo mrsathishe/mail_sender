@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { TEMPLATE_LIST } from "@/lib/templates";
 import { PageHeader } from "@/components/PageHeader";
+import { DonateDialog } from "@/components/DonateDialog";
 import { AppsManager } from "./AppsManager";
 import { baseUrlFrom } from "@/lib/base-url";
 import { privateMetadata } from "@/lib/seo";
@@ -23,10 +24,21 @@ export default async function DashboardPage() {
     <div className="wrap">
       <PageHeader title="Your apps" subtitle={`Signed in as ${session.email}`} />
       {/* Catalog is passed from the server so the design markup never ships to
-          the browser — the picker only needs id/name/description/previewHeight.
-          accountEmail drives the "use my own address" shortcut, which skips the
-          destination OTP because registration already proved that address. */}
-      <AppsManager designs={TEMPLATE_LIST} accountEmail={session.email} baseUrl={baseUrl} />
+          the browser — the picker only needs id/name/description/previewHeight. */}
+      <AppsManager designs={TEMPLATE_LIST} baseUrl={baseUrl} />
+
+      {/* Below the apps, not above them: someone signing in came to manage a form, and
+          the ask reads as an aside only after that. Same dialog as the header's — the
+          payment details have one source. */}
+      <section className="card card-wide donate-card">
+        <h2>Support this service</h2>
+        <p className="muted">
+          Your apps send through a mailbox and a server funded privately, at no charge to
+          you. If this saved you writing a backend, a voluntary contribution helps keep it
+          running. Nothing about your account or its limits depends on one.
+        </p>
+        <DonateDialog />
+      </section>
     </div>
   );
 }

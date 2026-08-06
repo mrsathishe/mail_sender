@@ -1,4 +1,6 @@
 import { Schema, model, models, Types, type Model, type InferSchemaType } from "mongoose";
+import { env } from "@/lib/env";
+import { mockDailyUsageModel } from "@/mocks/mock-db";
 
 // Per-app send counter, one row per app per UTC day (HARDENING_ROADMAP §1.2,
 // SPEC §4c). Counting rows in `SendLog` would do the same job, but that collection
@@ -22,6 +24,9 @@ export type DailyUsageDoc = InferSchemaType<typeof DailyUsageSchema> & {
   _id: Types.ObjectId;
 };
 
-export const DailyUsage: Model<DailyUsageDoc> =
-  (models.DailyUsage as Model<DailyUsageDoc>) ||
-  model<DailyUsageDoc>("DailyUsage", DailyUsageSchema);
+// The MOCK_MODE swap — see the note in models/User.ts. The mock honours $inc and
+// $setOnInsert, so the atomic upsert in lib/send-limit.ts behaves the same way.
+export const DailyUsage: Model<DailyUsageDoc> = env.mockMode
+  ? (mockDailyUsageModel as unknown as Model<DailyUsageDoc>)
+  : (models.DailyUsage as Model<DailyUsageDoc>) ||
+    model<DailyUsageDoc>("DailyUsage", DailyUsageSchema);

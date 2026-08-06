@@ -12,9 +12,9 @@ export function OPTIONS() {
   return corsPreflight();
 }
 
-// The pipeline itself is in lib/send-endpoint.ts, shared with
-// /api/v1/sendWithAttachment — see the note there for why it is one implementation
-// rather than two. This endpoint takes no files and keeps the 500KB body cap.
+// The one public send endpoint, for JSON and multipart alike. The pipeline is in
+// lib/send-endpoint.ts — see the note there for why the 5MB upload allowance is keyed off
+// the app's own `attachments.enabled` rather than off a second route.
 export function POST(req: Request) {
-  return handleSend(req, { attachments: false });
+  return handleSend(req);
 }

@@ -4,11 +4,6 @@ import { connectDB } from "@/lib/db";
 import { readLimitedBody } from "@/lib/body-limit";
 import { checkBotSignals, splitGuardFields, type SpamGuard } from "@/lib/bot-guard";
 import { checkSubmissionContent } from "@/lib/spam-score";
-import {
-  ATTACHMENT_MAX_TOTAL_BYTES,
-  checkAttachments,
-  type AttachmentConfig,
-} from "@/lib/attachments";
 import { claimSubmission, releaseSubmission } from "@/lib/dedupe";
 import { buildEmailBody, findReplyTo, sanitizeSubject } from "@/lib/flatten";
 import { DEFAULT_TEMPLATE_ID, renderEmailHtml } from "@/lib/templates";
@@ -31,10 +26,6 @@ const GUARD: SpamGuard = {
   timingField: "elapsed_ms",
   minSubmitSeconds: 3,
 };
-
-// Fixed for the same reason, and enabled because this form has a file input: somebody
-// reporting a rendering problem should be able to attach the screenshot of it.
-const ATTACHMENTS: AttachmentConfig = { enabled: true, maxFiles: 3 };
 
 const schema = z
   .object({
@@ -61,21 +52,20 @@ export async function POST(req: Request) {
   await connectDB();
 
   // The per-client claim is taken **before** the body is read, unlike /v1/send where a
-  // secret key has already vouched for the caller. This route is open to anyone and now
-  // accepts a 5MB multipart post, so a throttle applied after the read would only start
-  // working once we had already buffered the thing it exists to prevent.
+  // secret key has already vouched for the caller. This route is open to anyone, so a
+  // throttle applied after the read would only start working once we had already
+  // buffered the thing it exists to prevent.
   //
   // It is released below whenever the failure looks like a person making a mistake — an
-  // unreadable body, a mistyped email, the wrong kind of file — so a slip never costs a
-  // minute's wait. It is deliberately *kept* when the failure looks automated (honeypot,
-  // fill time, spam score), because throttling that caller is the entire point.
+  // unreadable body, a mistyped email — so a slip never costs a minute's wait. It is
+  // deliberately *kept* when the failure looks automated (honeypot, fill time, spam
+  // score), because throttling that caller is the entire point.
   const ip = await claimSubmission("contact-ip", { ip: clientIp(req.headers) });
   if (!ip.fresh) return NextResponse.json({ error: "too_many_requests" }, { status: 429 });
 
-  const body = await readLimitedBody(req, {
-    maxBytes: ATTACHMENT_MAX_TOTAL_BYTES,
-    keepFiles: true,
-  });
+  // Default cap, and file parts dropped: this form takes text only, so there is nothing
+  // here that needs the reader's raised allowance.
+  const body = await readLimitedBody(req);
   if (!body.ok) {
     await releaseSubmission(ip.key);
     const status = body.error === "payload_too_large" ? 413 : 400;
@@ -94,35 +84,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
 
+  // Keyed by the label each row is printed under, which is the contract lib/flatten
+  // now expects (an app's rows are keyed by its declared labels — lib/fields).
   const data: Record<string, unknown> = {
-    name: parsed.data.name,
-    email: parsed.data.email,
-    subject: parsed.data.subject ?? "",
-    message: parsed.data.message,
+    Name: parsed.data.name,
+    Email: parsed.data.email,
+    Subject: parsed.data.subject ?? "",
+    Message: parsed.data.message,
   };
 
   const content = checkSubmissionContent(data);
   if (!content.ok) return NextResponse.json({ error: "spam_rejected" }, { status: 422 });
 
-  const files = checkAttachments(ATTACHMENTS, body.files);
-  if (!files.ok) {
-    await releaseSubmission(ip.key);
-    return NextResponse.json({ error: files.error, file: files.file }, { status: 422 });
-  }
-
   // One 60-second claim per body as well as the per-client one above, so a
-  // double-clicked submit is answered as the request it already is. The file bytes are
-  // part of that identity — the same note with a different screenshot is a new message.
-  const claim = await claimSubmission(
-    "contact",
-    data,
-    files.attachments.map((a) => a.content)
-  );
+  // double-clicked submit is answered as the request it already is.
+  const claim = await claimSubmission("contact", data);
   if (!claim.fresh) return NextResponse.json({ ok: true, duplicate: true });
-
-  // Listed in the mail as well as attached, so the row is there even in a client that
-  // hides attachments. Appended after the schema check, so `.strict()` never sees it.
-  const rendered = files.summary.length > 0 ? { ...data, "Attached files": files.summary } : data;
 
   try {
     await sendMail({
@@ -132,14 +109,13 @@ export async function POST(req: Request) {
           ? `[contact] ${parsed.data.subject}`
           : `[contact] Message from ${parsed.data.name}`
       ),
-      text: buildEmailBody(rendered),
-      html: renderEmailHtml(DEFAULT_TEMPLATE_ID, rendered, {
+      text: buildEmailBody(data),
+      html: renderEmailHtml(DEFAULT_TEMPLATE_ID, data, {
         websiteName: `${BRAND_FULL} — contact form`,
       }),
       // The sender's own address, so replying from the inbox reaches them. `From:`
       // stays ours, as everywhere else.
       replyTo: findReplyTo(data),
-      attachments: files.attachments,
     });
   } catch {
     // Release both claims: a failed send must not leave a retry answered as a

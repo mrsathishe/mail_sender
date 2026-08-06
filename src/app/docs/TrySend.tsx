@@ -18,16 +18,9 @@ type Result = { status: number; body: string; ok: boolean } | { error: string } 
 // Live tester: paste an app's secret key + a JSON payload and actually call
 // POST /api/v1/send. This sends a REAL email to that app's destination inbox.
 //
-// Attaching a file switches it to the multipart endpoint, because that is the only way
-// to exercise uploads without a terminal — the JSON fields become form parts, which is
-// exactly the shape a customer's own route would forward.
-export function TrySend({
-  endpoint,
-  attachmentEndpoint,
-}: {
-  endpoint: string;
-  attachmentEndpoint: string;
-}) {
+// Attaching a file switches the request to multipart against the same URL — the JSON
+// fields become form parts, which is exactly the shape a customer's own form posts.
+export function TrySend({ endpoint }: { endpoint: string }) {
   const [secret, setSecret] = useState("");
   const [body, setBody] = useState(DEFAULT_BODY);
   const [sending, setSending] = useState(false);
@@ -64,24 +57,21 @@ export function TrySend({
     setSending(true);
     try {
       // With files this has to be multipart, and the browser must set Content-Type
-      // itself so the boundary matches the body it built.
-      let request: { url: string; headers: Record<string, string>; body: BodyInit };
+      // itself so the boundary matches the body it built. The URL is the same either
+      // way — only the encoding differs.
+      let request: { headers: Record<string, string>; body: BodyInit };
       if (files.length > 0) {
         const form = new FormData();
         for (const [key, value] of Object.entries(parsed)) {
           form.append(key, typeof value === "string" ? value : JSON.stringify(value));
         }
         for (const file of files) form.append("files", file);
-        request = { url: attachmentEndpoint, headers: {}, body: form };
+        request = { headers: {}, body: form };
       } else {
-        request = {
-          url: endpoint,
-          headers: { "Content-Type": "application/json" },
-          body,
-        };
+        request = { headers: { "Content-Type": "application/json" }, body };
       }
 
-      const res = await fetch(request.url, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { Authorization: `Bearer ${secret.trim()}`, ...request.headers },
         body: request.body,
@@ -131,7 +121,7 @@ export function TrySend({
         aria-describedby="try-files-help"
       />
       <p className="muted field-help" id="try-files-help">
-        Attach a file and the request goes to <code>/api/v1/sendWithAttachment</code> as{" "}
+        Attach a file and the request goes to the same endpoint as{" "}
         <code>multipart/form-data</code> instead, with the fields above as form parts. The
         app needs attachments switched on, or the answer is{" "}
         <code>422 attachments_not_enabled</code>.
